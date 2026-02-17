@@ -1,5 +1,3 @@
----
-
 # 📚 Data Method Notes — Google Earth Engine & Open Buildings
 
 ## How Building Counts and Sizes Are Computed
@@ -15,7 +13,7 @@ For **Temporal V1**, this app:
 1. Selects the yearly building-presence mosaic.
 2. Uses the `building_presence` band (probability of building per pixel).
 3. Applies a threshold (default = 0.5).
-4. Converts the thresholded raster to polygons using `reduceToVectors`.
+4. Converts the thresholded raster to polygons using Earth Engine `reduceToVectors`.
 5. Treats each polygon as one detected building object.
 6. Computes polygon area in m² after reprojection to a metric CRS.
 
@@ -31,21 +29,21 @@ They are runtime-derived shapes, not original Google footprint vectors.
 
 ## Effect of Scale and the `SCALE_M` Variable
 
-Vectorisation from raster to polygons in Earth Engine depends on processing scale (metres per pixel).
+Raster-to-polygon conversion in Earth Engine depends on processing scale (metres per pixel).
 
-The code defines a `SCALE_M` parameter to represent working scale in metres, and polygon extraction uses a fine vectorisation scale internally. Scale choice affects results:
+The code defines a `SCALE_M` variable to represent a working scale in metres, and polygon extraction uses a fine vectorisation scale internally. Scale choice affects results:
 
-Smaller (finer) scale:
-- more detailed polygon boundaries  
-- more small buildings/fragments detected  
-- higher counts possible  
-- slower processing  
+**Smaller (finer) scale**
+- more detailed polygon boundaries
+- more small buildings/fragments detected
+- higher counts possible
+- slower processing
 
-Larger (coarser) scale:
-- smoother polygons  
-- small buildings may merge or disappear  
-- lower counts  
-- faster processing  
+**Larger (coarser) scale**
+- smoother polygons
+- small buildings may merge or disappear
+- lower counts
+- faster processing
 
 Building counts and sizes should therefore be interpreted as **scale-dependent estimates**, not exact cadastral footprints.
 
@@ -53,14 +51,14 @@ Building counts and sizes should therefore be interpreted as **scale-dependent e
 
 ## Temporal V1 vs V3 Datasets
 
-**Temporal V1 — `open-buildings-temporal/v1`**
+### Temporal V1 — `open-buildings-temporal/v1`
 - Multi-year dataset
 - Raster probability layers
 - Enables time-series analysis
 - Requires threshold + vectorisation
 - Polygons are derived at runtime
 
-**V3 — `open-buildings/v3/polygons`**
+### V3 — `open-buildings/v3/polygons`
 - Single release dataset
 - Precomputed building footprint polygons
 - No time dimension
