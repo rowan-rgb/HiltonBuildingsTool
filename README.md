@@ -1,162 +1,197 @@
-Hilton Buildings Tool — Shiny App
+# 🏢 Hilton Buildings Tool — Shiny App
 
-This repository contains a single-file R Shiny application (app.R) for exploring Google Open Buildings Temporal data within user-selected regions of interest.
+An interactive **R Shiny** application for exploring Google Open Buildings Temporal data within user-defined regions of interest (ROI). Users can draw areas or select predefined boundaries and analyse building counts, sizes, and land coverage over time.
 
-The app uses:
+---
 
-Shiny + Leaflet + Plotly for the interface and visualisation
+## ✨ Features
 
-Google Earth Engine via rgee (R) and earthengine-api (Python through reticulate)
+- 🗺️ Interactive ROI selection
+  - Draw custom polygon
+  - Select municipal wards
+  - Select UMN functional areas
+- 🏗️ Google Open Buildings Temporal V1 integration
+- 📊 Building size histogram with live filtering
+- 📈 Time-series of building counts and land coverage
+- 📥 Export filtered results to CSV
+- 🧭 Multi-layer interactive map overlays
 
-Local shapefiles included in this repository under the data/ folder
+---
 
-Running the App Locally
-1️⃣ Prerequisites
+## ⚙️ Technology Stack
 
-Please install the following on your computer:
+- **R Shiny** — application framework
+- **Leaflet** — interactive mapping
+- **Plotly** — charts
+- **sf** — spatial data handling
+- **Google Earth Engine** via:
+  - `rgee` (R)
+  - `earthengine-api` (Python through `reticulate`)
+- Local shapefiles included in the repository
 
-R (recommended: version 4.2 or newer)
+---
 
-RStudio (recommended)
+# 🚀 Running the App Locally
 
-Python 3 (recommended: version 3.10 or newer)
+## 1️⃣ Prerequisites
+
+Install the following:
+
+- R (recommended version 4.2 or newer)
+- RStudio (recommended)
+- Python 3 (recommended version 3.10 or newer)
 
 Check Python in Terminal:
 
-python3 --version
+    python3 --version
 
-2️⃣ Clone the Repository
+---
 
-Using Terminal:
+## 2️⃣ Get the Code
 
-git clone https://github.com/rowan-rgb/HiltonBuildingsTool.git
-cd HiltonBuildingsTool
+Clone with Git:
 
+    git clone https://github.com/rowan-rgb/HiltonBuildingsTool.git
+    cd HiltonBuildingsTool
 
-Alternative (no git):
+Alternative without git:
 
-Open the GitHub repo page
+- Open the GitHub repository page
+- Click **Code → Download ZIP**
+- Unzip the folder
+- Open the folder in RStudio
 
-Click Code → Download ZIP
+---
 
-Unzip the folder
+## 3️⃣ Install Required R Packages
 
-Open the folder in RStudio
+Run in R:
 
-3️⃣ Install Required R Packages
+    install.packages(c(
+      "shiny",
+      "leaflet",
+      "leaflet.extras",
+      "sf",
+      "jsonlite",
+      "geojsonsf",
+      "htmlwidgets",
+      "plotly",
+      "reticulate",
+      "rgee"
+    ))
 
-Open R or RStudio and run:
+If the **sf** package fails on macOS, run in Terminal:
 
-install.packages(c(
-  "shiny",
-  "leaflet",
-  "leaflet.extras",
-  "sf",
-  "jsonlite",
-  "geojsonsf",
-  "htmlwidgets",
-  "plotly",
-  "reticulate",
-  "rgee"
-))
+    xcode-select --install
 
+Then reinstall `sf`.
 
-If the sf package fails to install on macOS, run:
+---
 
-xcode-select --install
+## 4️⃣ Confirm Shapefiles (Already Included)
 
-
-Then reinstall sf.
-
-4️⃣ Confirm Shapefiles Exist
-
-The required shapefiles are already included in this repository.
+This repository already contains the required shapefiles.
 
 Expected paths:
 
-data/wards/Municipal_Wards_2021.shp
-data/umn/Analysis regions/UMN_Functional_Areas_1.shp
+- data/wards/Municipal_Wards_2021.shp
+- data/umn/Analysis regions/UMN_Functional_Areas_1.shp
 
-
-A shapefile consists of multiple companion files. Each .shp should have at least:
-
-.shp
-
-.shx
-
-.dbf
-
-usually .prj
+Each shapefile must include companion files in the same folder (`.shx`, `.dbf`, usually `.prj`).
 
 Quick check in R:
 
-file.exists("data/wards/Municipal_Wards_2021.shp")
-file.exists("data/umn/Analysis regions/UMN_Functional_Areas_1.shp")
+    file.exists("data/wards/Municipal_Wards_2021.shp")
+    file.exists("data/umn/Analysis regions/UMN_Functional_Areas_1.shp")
 
+Both should return `TRUE`.
 
-Both should return:
+---
 
-TRUE
+## 5️⃣ Google Earth Engine Setup (One-Time)
 
-5️⃣ Google Earth Engine Setup (One-Time Authentication)
-
-You must have a Google account with Earth Engine access.
+You must have Google Earth Engine enabled for your Google account.
 
 Run once in R:
 
-library(rgee)
-ee_Initialize()
+    library(rgee)
+    ee_Initialize()
 
+A browser window will open — log in and authorise access.
 
-A browser window will open. Log in and complete the Earth Engine authorisation process.
+---
 
-6️⃣ Python + Earth Engine API (Automatic)
+## 6️⃣ Python + Earth Engine API (Automatic)
 
-The app automatically manages Python using reticulate.
+The app automatically manages Python using **reticulate**.
 
-On first run, app.R will automatically:
+On first run it will:
 
-create a Python virtual environment named r-reticulate (if missing)
+- create a virtual environment named `r-reticulate`
+- install the Python package `earthengine-api` if missing
+- bind R to that environment
 
-install the Python package earthengine-api (if missing)
+The first startup may take a few minutes while dependencies install.
 
-use this environment for Earth Engine access
+---
 
-⚠️ The first startup may take a few minutes while Python packages install.
-
-7️⃣ Run the App
+## 7️⃣ Start the App
 
 In RStudio:
 
-Open app.R
+- Open `app.R`
+- Click **Run App**
 
-Click Run App
+Or run in R:
 
-Or run from the console:
-
-shiny::runApp("app.R")
-
+    shiny::runApp("app.R")
 
 You should see:
 
-Listening on http://127.0.0.1:XXXX
+    Listening on http://127.0.0.1:XXXX
 
+Open that address in your browser.
 
-Open that URL in your browser to use the app.
+---
 
-Troubleshooting
-Shapefile read errors
+# 🛠️ Troubleshooting
 
-Confirm the .shp, .shx, and .dbf files are present
+## Shapefile errors
 
-Confirm the folder structure matches the paths above
+- Ensure `.shp`, `.shx`, and `.dbf` files are present
+- Confirm folder structure matches the repo paths
+- Do not change the relative paths in `app.R`
 
-Earth Engine authentication issues
+---
+
+## Earth Engine authentication problems
 
 Re-run:
 
-library(rgee)
-ee_Initialize()
+    library(rgee)
+    ee_Initialize()
 
+---
 
-and complete login again.
+## Reticulate / Python issues
+
+Check which Python R is using:
+
+    library(reticulate)
+    py_config()
+
+Rebuild the environment if needed:
+
+    virtualenv_remove("r-reticulate")
+
+Restart R and run the app again.
+
+---
+
+# 👥 Collaboration Notes
+
+- All file paths are **relative to the project directory**
+- Shapefiles are versioned with the repository
+- Python environment is created automatically per machine
+- First run is slower due to Python + Earth Engine setup
+- No path editing should be required if the repo structure is unchanged
