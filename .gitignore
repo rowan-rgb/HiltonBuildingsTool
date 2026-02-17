@@ -1,0 +1,19 @@
+# R / RStudio
+.Rhistory
+.RData
+.Rproj.user/
+
+# Mac
+.DS_Store
+
+# Shiny deployment
+rsconnect/
+
+# Reticulate / python envs
+.venv/
+venv/
+r-reticulate/
+__pycache__/
+
+# Optional: prevent uploading shapefiles/data (recommended)
+data/
