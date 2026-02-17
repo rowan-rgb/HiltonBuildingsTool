@@ -29,6 +29,8 @@ They are runtime-derived shapes, not original Google footprint vectors.
 
 ## Effect of Scale and the `SCALE_M` Variable
 
+Currently, SCALE_M = 10 (this is reasonable)
+
 Raster-to-polygon conversion in Earth Engine depends on processing scale (metres per pixel).
 
 The code defines a `SCALE_M` variable to represent a working scale in metres, and polygon extraction uses a fine vectorisation scale internally. Scale choice affects results:
