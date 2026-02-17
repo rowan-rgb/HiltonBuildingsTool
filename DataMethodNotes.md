@@ -1,83 +1,96 @@
-# 📚 Data Method Notes — Google Earth Engine & Open Buildings
+# 📚 Data Method Notes — Open Buildings (Pre-Downloaded Data)
 
 ## How Building Counts and Sizes Are Computed
 
-This app uses Google Open Buildings datasets via **Google Earth Engine (GEE)**.
+This app uses **Google Open Buildings Temporal V1 and Open Buildings V3 datasets that have been pre-downloaded and stored locally** in the repository for ward areas.
 
-Google’s ML models detect buildings from satellite imagery and provide either:
-- per-pixel **building presence probabilities** (Temporal V1), or
-- **vector footprint polygons** (V3).
+No Google Earth Engine (GEE) access is used at runtime. All processing is performed locally on the prepared datasets.
 
-For **Temporal V1**, this app:
+Google’s ML models originally detect buildings from satellite imagery and provide either:
 
-1. Selects the yearly building-presence mosaic.
-2. Uses the `building_presence` band (probability of building per pixel).
-3. Applies a threshold (default = 0.5).
-4. Converts the thresholded raster to polygons using Earth Engine `reduceToVectors`.
-5. Treats each polygon as one detected building object.
-6. Computes polygon area in m² after reprojection to a metric CRS.
+- per-pixel building presence probabilities (Temporal V1), or  
+- vector footprint polygons (V3).
 
-These derived polygons are used for:
-- building counts
-- size histograms
-- size filtering
-- land coverage %
-
-They are runtime-derived shapes, not original Google footprint vectors.
+The datasets included in this project are derived from those sources and prepared in advance for ward-scale analysis.
 
 ---
 
-## Effect of Scale and the `SCALE_M` Variable
+## Temporal V1 Processing (Pre-Derived)
 
-Currently, SCALE_M = 10 (this is reasonable)
+For Temporal V1, the original workflow (performed offline before packaging with the app) was:
 
-Raster-to-polygon conversion in Earth Engine depends on processing scale (metres per pixel).
+- Select the yearly building-presence mosaic
+- Use the `building_presence` probability band
+- Apply a probability threshold (default = 0.5)
+- Convert the thresholded raster to polygons
+- Treat each polygon as one detected building object
+- Compute polygon area in m² after reprojection to a metric CRS
 
-The code defines a `SCALE_M` variable to represent a working scale in metres, and polygon extraction uses a fine vectorisation scale internally. Scale choice affects results:
+These derived polygons are what the app reads from the local dataset.
+
+They are used for:
+
+- building counts  
+- size histograms  
+- size filtering  
+- land coverage %  
+
+They are **derived shapes**, not original Google footprint vectors, and are now stored locally rather than generated at runtime.
+
+---
+
+## Scale and Resolution Effects
+
+Raster-to-polygon conversion depends on processing scale (metres per pixel). In the original preprocessing workflow, a working scale equivalent to ~10 m resolution was used.
+
+Scale choice affects results:
 
 **Smaller (finer) scale**
-- more detailed polygon boundaries
-- more small buildings/fragments detected
-- higher counts possible
-- slower processing
+
+- more detailed polygon boundaries  
+- more small buildings/fragments detected  
+- higher counts possible  
 
 **Larger (coarser) scale**
-- smoother polygons
-- small buildings may merge or disappear
-- lower counts
-- faster processing
+
+- smoother polygons  
+- small buildings may merge or disappear  
+- lower counts  
 
 Building counts and sizes should therefore be interpreted as **scale-dependent estimates**, not exact cadastral footprints.
+
+Because preprocessing has already been completed, results are now stable and reproducible across users of this app.
 
 ---
 
 ## Temporal V1 vs V3 Datasets
 
-### Temporal V1 — `open-buildings-temporal/v1`
-- Multi-year dataset
-- Raster probability layers
-- Enables time-series analysis
-- Requires threshold + vectorisation
-- Polygons are derived at runtime
+### Temporal V1 — Open Buildings Temporal
 
-### V3 — `open-buildings/v3/polygons`
-- Single release dataset
-- Precomputed building footprint polygons
-- No time dimension
-- Used here as a reference comparison layer
+- Multi-year dataset  
+- Originally raster probability layers  
+- Enables time-series analysis  
+- Required threshold + vectorisation (performed offline)  
+- Polygons are pre-derived and stored locally in this project  
 
-Counts differ because the datasets use different models, formats, and post-processing.
+### V3 — Open Buildings V3 Polygons
+
+- Single release dataset  
+- Precomputed building footprint polygons  
+- No time dimension  
+- Included locally as a comparison/reference layer  
+
+Counts differ between V1 and V3 because the datasets use different models, formats, and post-processing pipelines.
 
 ---
 
-## Earth Engine Project & Authentication
+## Data Access and Reproducibility
 
-The app runs through **Google Earth Engine** using the project ID set in `ee_Initialize()`.
+- All Open Buildings data used by the app is **pre-downloaded and stored locally**
+- No Google Earth Engine calls are made by the app
+- No API keys or cloud credentials are required
+- No authentication steps are needed
+- All users run the same prepared datasets
+- Results are reproducible across machines given the same repository contents
 
-- No API keys are stored in this repo
-- Authentication happens locally via your Google account
-- Each user must run `ee_Initialize()` once
-- Users must have Earth Engine access enabled
-- Users must be authorised for the configured GEE project (or change it)
-
-All heavy computation runs on Earth Engine servers under the authenticated user’s project.
+Heavy cloud computation was performed only during the original offline data preparation stage, not during app execution.
