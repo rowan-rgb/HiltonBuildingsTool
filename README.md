@@ -1,197 +1,210 @@
-# 🏢 Hilton Buildings Tool — Shiny App
+# Hilton Buildings Tool — Shiny App
 
-An interactive **R Shiny** application for exploring Google Open Buildings Temporal data within user-defined regions of interest (ROI). Users can draw areas or select predefined boundaries and analyse building counts, sizes, and land coverage over time.
+An interactive R Shiny application for exploring Google Open Buildings Temporal data within user-defined regions of interest (ROI). Users can draw areas or select predefined boundaries and analyse building counts, sizes, and land coverage over time.
+
+This version of the app uses **pre-downloaded Open Buildings Temporal V1 and V3 datasets for ward areas**. All Google Earth Engine access and initialisation code has been removed. No Earth Engine setup, authentication, or Python environment is required.
 
 ---
 
-## ✨ Features
+## Features
 
-- 🗺️ Interactive ROI selection
+- Interactive ROI selection
   - Draw custom polygon
   - Select municipal wards
   - Select UMN functional areas
-- 🏗️ Google Open Buildings Temporal V1 integration
-- 📊 Building size histogram with live filtering
-- 📈 Time-series of building counts and land coverage
-- 📥 Export filtered results to CSV
-- 🧭 Multi-layer interactive map overlays
+- Open Buildings Temporal V1 and V3 datasets loaded from local files
+- Building size histogram with live filtering
+- Time-series of building counts and land coverage
+- Export filtered results to CSV
+- Multi-layer interactive map overlays
 
 ---
 
-## ⚙️ Technology Stack
+## Technology Stack
 
-- **R Shiny** — application framework
-- **Leaflet** — interactive mapping
-- **Plotly** — charts
-- **sf** — spatial data handling
-- **Google Earth Engine** via:
-  - `rgee` (R)
-  - `earthengine-api` (Python through `reticulate`)
-- Local shapefiles included in the repository
+- R Shiny — application framework
+- Leaflet — interactive mapping
+- Plotly — charts
+- sf — spatial data handling
+- dplyr / readr — data processing
+- Local datasets — Open Buildings Temporal V1 & V3 (pre-downloaded)
+- Local shapefiles — wards and UMN functional areas included in the repository
+
+No Google Earth Engine, rgee, reticulate, or Python dependencies are required.
 
 ---
 
-# 🚀 Running the App Locally
+## Running the App Locally
 
-## 1️⃣ Prerequisites
+### Prerequisites
 
-Install the following:
+Install:
 
 - R (recommended version 4.2 or newer)
 - RStudio (recommended)
-- Python 3 (recommended version 3.10 or newer)
 
-Check Python in Terminal:
+Check R version:
 
-    python3 --version
+```r
+R.version.string
+```
 
 ---
 
-## 2️⃣ Get the Code
+### Get the Code
 
 Clone with Git:
 
-    git clone https://github.com/rowan-rgb/HiltonBuildingsTool.git
-    cd HiltonBuildingsTool
+```bash
+git clone https://github.com/rowan-rgb/HiltonBuildingsTool.git
+cd HiltonBuildingsTool
+```
 
-Alternative without git:
+Or without git:
 
-- Open the GitHub repository page
-- Click **Code → Download ZIP**
-- Unzip the folder
-- Open the folder in RStudio
+1. Open the GitHub repository page
+2. Click Code → Download ZIP
+3. Unzip the folder
+4. Open the folder in RStudio
 
 ---
 
-## 3️⃣ Install Required R Packages
+### Install Required R Packages
 
 Run in R:
 
-    install.packages(c(
-      "shiny",
-      "leaflet",
-      "leaflet.extras",
-      "sf",
-      "jsonlite",
-      "geojsonsf",
-      "htmlwidgets",
-      "plotly",
-      "reticulate",
-      "rgee"
-    ))
+```r
+install.packages(c(
+  "shiny",
+  "leaflet",
+  "leaflet.extras",
+  "sf",
+  "jsonlite",
+  "geojsonsf",
+  "htmlwidgets",
+  "plotly",
+  "dplyr",
+  "readr"
+))
+```
 
-If the **sf** package fails on macOS, run in Terminal:
+If the sf package fails on macOS, run in Terminal:
 
-    xcode-select --install
+```bash
+xcode-select --install
+```
 
-Then reinstall `sf`.
+Then reinstall sf:
+
+```r
+install.packages("sf")
+```
 
 ---
 
-## 4️⃣ Confirm Shapefiles (Already Included)
+### Confirm Boundary Shapefiles (Included)
 
-This repository already contains the required shapefiles.
+The repository already contains the required shapefiles.
 
 Expected paths:
 
-- data/wards/Municipal_Wards_2021.shp
-- data/umn/Analysis regions/UMN_Functional_Areas_1.shp
+```
+data/wards/Municipal_Wards_2021.shp
+data/umn/Analysis regions/UMN_Functional_Areas_1.shp
+```
 
-Each shapefile must include companion files in the same folder (`.shx`, `.dbf`, usually `.prj`).
+Each shapefile must include companion files in the same folder (.shp, .shx, .dbf, usually .prj).
 
 Quick check in R:
 
-    file.exists("data/wards/Municipal_Wards_2021.shp")
-    file.exists("data/umn/Analysis regions/UMN_Functional_Areas_1.shp")
+```r
+file.exists("data/wards/Municipal_Wards_2021.shp")
+file.exists("data/umn/Analysis regions/UMN_Functional_Areas_1.shp")
+```
 
-Both should return `TRUE`.
-
----
-
-## 5️⃣ Google Earth Engine Setup (One-Time)
-
-You must have Google Earth Engine enabled for your Google account.
-
-Run once in R:
-
-    library(rgee)
-    ee_Initialize()
-
-A browser window will open — log in and authorise access.
+Both should return TRUE.
 
 ---
 
-## 6️⃣ Python + Earth Engine API (Automatic)
+### Confirm Open Buildings Data (Included)
 
-The app automatically manages Python using **reticulate**.
+The repository includes pre-downloaded Open Buildings Temporal V1 and V3 data for ward areas. These datasets are read directly by the app.
 
-On first run it will:
+- No online data access required
+- No authentication required
+- No API setup required
 
-- create a virtual environment named `r-reticulate`
-- install the Python package `earthengine-api` if missing
-- bind R to that environment
-
-The first startup may take a few minutes while dependencies install.
+Do not rename or move these files unless you also update the paths in app.R.
 
 ---
 
-## 7️⃣ Start the App
+### Start the App
 
 In RStudio:
 
-- Open `app.R`
-- Click **Run App**
+1. Open app.R
+2. Click Run App
 
-Or run in R:
+Or run from the R console:
 
-    shiny::runApp("app.R")
+```r
+shiny::runApp("app.R")
+```
 
 You should see:
 
-    Listening on http://127.0.0.1:XXXX
+```
+Listening on http://127.0.0.1:XXXX
+```
 
 Open that address in your browser.
 
 ---
 
-# 🛠️ Troubleshooting
+## Troubleshooting
 
-## Shapefile errors
+### Shapefile errors
 
-- Ensure `.shp`, `.shx`, and `.dbf` files are present
-- Confirm folder structure matches the repo paths
-- Do not change the relative paths in `app.R`
+- Ensure .shp, .shx, and .dbf files are present
+- Confirm folder structure matches the repository paths
+- Do not change relative paths in app.R
+
+### Data not loading
+
+- Check that Open Buildings V1 and V3 data files are present in the expected folders
+- Confirm filenames have not been changed
+- Restart R and rerun the app
+
+### sf package install problems
+
+macOS:
+
+```bash
+xcode-select --install
+```
+
+Then reinstall:
+
+```r
+install.packages("sf")
+```
+
+Windows:
+
+Install RTools if prompted during package installation.
 
 ---
 
-## Earth Engine authentication problems
+## Collaboration Notes
 
-Re-run:
-
-    library(rgee)
-    ee_Initialize()
-
----
-
-## Reticulate / Python issues
-
-Check which Python R is using:
-
-    library(reticulate)
-    py_config()
-
-Rebuild the environment if needed:
-
-    virtualenv_remove("r-reticulate")
-
-Restart R and run the app again.
+- All file paths are relative to the project directory
+- Boundary shapefiles are versioned with the repository
+- Open Buildings V1 & V3 ward datasets are stored locally in the repo
+- No Google Earth Engine or Python setup is required
+- No path editing should be required if the repository structure is unchanged
 
 ---
 
-# 👥 Collaboration Notes
+## Version Note
 
-- All file paths are **relative to the project directory**
-- Shapefiles are versioned with the repository
-- Python environment is created automatically per machine
-- First run is slower due to Python + Earth Engine setup
-- No path editing should be required if the repo structure is unchanged
+This README reflects the local-data version of the app where Earth Engine access has been removed and replaced with pre-downloaded datasets for ward-scale analysis.
