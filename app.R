@@ -1,52 +1,13 @@
 # ------------------------------------------------------------
-# app.R — Open Buildings Temporal V1 — Single ROI
+# app.R — Hilton Buildings Tool
 #
-# Adds UMN Functional Areas button + click-to-select (like Wards)
-# - Toggle "Wards" (existing)
-# - Toggle "UMN Areas" (NEW)
-# - Toggle "Draw" (existing)
-#
-# Notes:
-# - You provided a .shx path; sf::st_read needs the .shp.
-#   This code automatically swaps .shx -> .shp if needed.
+# - NO Google Earth Engine / rgee / reticulate
+# - Loads local GeoJSON on-demand (lazy) so the map renders immediately
+# - Clips buildings to ROI locally (sf)
+# - Keeps Wards / UMN Areas / Draw modes + live size filtering + plots + CSV export
 # ------------------------------------------------------------
 
-# Sys.setenv(
-#   RETICULATE_PYTHON = "/Users/rowandavies/Library/Caches/org.R-project.R/R/reticulate/uv/cache/archive-v0/QuaHw5TiV-JHOMAB6Uq3P/bin/python"
-# )
-
-# --- Python / Earth Engine setup (Reticulate + rgee) ---
-library(reticulate)
-library(rgee)
-
-# Create the env only if it doesn't exist yet
-if (!virtualenv_exists("r-reticulate")) {
-  virtualenv_create("r-reticulate")
-}
-
-# Force reticulate to use this env for the session
-use_virtualenv("r-reticulate", required = TRUE)
-
-# Install Earth Engine API only if missing
-if (!py_module_available("ee")) {
-  py_install("earthengine-api", pip = TRUE)
-}
-
-# Confirm what Python reticulate is using + confirm ee import
-py_config()
-py_run_string("import ee; print('ee version:', ee.__version__)")
-
-# Initialise Earth Engine (will prompt auth if not already authenticated)
-ee_Initialize(project = "ccee-486908")
-
-# --- R packages for the Shiny app ---
 library(shiny)
-# (then your other libraries: leaflet, sf, plotly, etc.)
-
-
-
-
-
 library(leaflet)
 library(leaflet.extras)
 library(sf)
@@ -55,21 +16,38 @@ library(geojsonsf)
 library(htmlwidgets)
 library(plotly)
 
-temporal_col <- ee$ImageCollection("GOOGLE/Research/open-buildings-temporal/v1")
-v3_fc <- ee$FeatureCollection("GOOGLE/Research/open-buildings/v3/polygons")
+# ---------------------------
+# Local buildings data paths
+# ---------------------------
+TEMPORAL_DIR <- "/Users/rowandavies/Desktop/City Centric/HiltonBuildingsTool_local/data/V1 Temporal"
+V3_DIR       <- "/Users/rowandavies/Desktop/City Centric/HiltonBuildingsTool_local/data/V3 Shapefile"
+
+TEMPORAL_FILES <- list(
+  "2016" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2016_wards_roi_thr0.5_2026_02_17_11_39_40.geojson"),
+  "2017" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2017_wards_roi_thr0.5_2026_02_17_11_39_41.geojson"),
+  "2018" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2018_wards_roi_thr0.5_2026_02_17_11_39_42.geojson"),
+  "2019" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2019_wards_roi_thr0.5_2026_02_17_11_39_43.geojson"),
+  "2020" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2020_wards_roi_thr0.5_2026_02_17_11_39_44.geojson"),
+  "2021" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2021_wards_roi_thr0.5_2026_02_17_11_39_45.geojson"),
+  "2022" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2022_wards_roi_thr0.5_2026_02_17_11_39_46.geojson"),
+  "2023" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2023_wards_roi_thr0.5_2026_02_17_11_39_47.geojson")
+)
+
+V3_FILE <- file.path(V3_DIR, "openbuildings_v3_wards_roi_2026_02_17_11_39_09.geojson")
 
 YEARS <- 2016:2023
 FIRST_YEAR <- 2016
 LAST_YEAR  <- 2023
+
+# informational only (your Temporal files already include thr0.5)
 PRES_THRESH <- 0.5
-SCALE_M <- 10
 
 # ---- local shapefiles ----
-wards_path <- "data/wards/Municipal_Wards_2021.shp"
-UMN_function_areas_path <- "data/umn/Analysis regions/UMN_Functional_Areas_1.shp"
+wards_path <- "/Users/rowandavies/Desktop/City Centric/HiltonBuildingsTool_local/data/wards/Municipal_Wards_2021.shp"
+UMN_function_areas_path <- "/Users/rowandavies/Desktop/City Centric/HiltonBuildingsTool_local/data/umn/Analysis regions/UMN_Functional_Areas_1.shp"
 
 ui <- fluidPage(
-  titlePanel("Open Buildings Temporal V1 — Single ROI"),
+  titlePanel("Open Buildings Temporal V1 — Single ROI (LOCAL)"),
   tags$head(
     tags$style(HTML("
       .leaflet-draw { display: none; }
@@ -125,7 +103,6 @@ ui <- fluidPage(
       uiOutput("size_slider_ui"),
       br(),
       
-      # Auto-updating (computed when ROI is chosen)
       plotOutput("ts_plot", height = 420),
       
       br(),
@@ -136,9 +113,164 @@ ui <- fluidPage(
 
 server <- function(input, output, session) {
   
-  # Safe fallback (replaces %||%)
+  # ---------------------------
+  # Status
+  # ---------------------------
+  status <- reactiveVal("Choose a mode: Draw ROI, Wards, or UMN Areas…")
+  output$status <- renderText(status())
+  
+  # ---------------------------
+  # Helpers
+  # ---------------------------
   coalesce <- function(x, fallback) {
     if (is.null(x) || length(x) == 0 || (length(x) == 1 && is.na(x))) fallback else x
+  }
+  
+  fmt_int <- function(x) {
+    if (is.null(x) || length(x) == 0) return("—")
+    x <- suppressWarnings(as.numeric(x[1]))
+    if (!is.finite(x)) return("—")
+    format(round(x, 0), big.mark = ",", scientific = FALSE, trim = TRUE)
+  }
+  
+  fmt_num0 <- function(x) {
+    if (!is.finite(x)) return("—")
+    format(round(x, 0), big.mark = ",", scientific = FALSE, trim = TRUE)
+  }
+  
+  clamp <- function(x, lo, hi) {
+    x <- as.numeric(x)
+    if (!is.finite(x)) return(lo)
+    max(lo, min(hi, x))
+  }
+  
+  feature_to_sf <- function(feature) {
+    gj <- jsonlite::toJSON(feature, auto_unbox = TRUE)
+    roi_sf <- geojsonsf::geojson_sf(gj)
+    sf::st_as_sf(sf::st_set_crs(roi_sf, 4326))
+  }
+  
+  prep_roi_sf <- function(x, simplify_m = 5) {
+    x <- sf::st_zm(x, drop = TRUE, what = "ZM")
+    x <- sf::st_make_valid(x)
+    g <- sf::st_union(x)
+    g <- sf::st_cast(g, "MULTIPOLYGON", warn = FALSE)
+    if (is.numeric(simplify_m) && simplify_m > 0) {
+      g_m <- sf::st_transform(g, 3857)
+      g_m <- sf::st_simplify(g_m, dTolerance = simplify_m, preserveTopology = TRUE)
+      g <- sf::st_transform(g_m, 4326)
+    }
+    sf::st_as_sf(sf::st_sfc(g, crs = 4326))
+  }
+  
+  roi_area_m2_local <- function(roi_sf) {
+    if (is.null(roi_sf) || nrow(roi_sf) == 0) return(NA_real_)
+    roi_m <- tryCatch(sf::st_transform(roi_sf, 3857), error = function(e) NULL)
+    if (is.null(roi_m)) return(NA_real_)
+    as.numeric(sf::st_area(sf::st_union(roi_m)))
+  }
+  
+  add_area_m2 <- function(sfobj) {
+    if (is.null(sfobj) || nrow(sfobj) == 0) return(sfobj)
+    if ("area_m2" %in% names(sfobj)) return(sfobj)
+    m <- tryCatch(sf::st_transform(sfobj, 3857), error = function(e) NULL)
+    if (is.null(m)) {
+      sfobj$area_m2 <- NA_real_
+      return(sfobj)
+    }
+    sfobj$area_m2 <- as.numeric(sf::st_area(m))
+    sfobj
+  }
+  
+  filter_by_range <- function(sfobj, rng) {
+    if (is.null(sfobj) || nrow(sfobj) == 0) return(sfobj)
+    sfobj <- add_area_m2(sfobj)
+    if (is.null(rng) || length(rng) != 2) return(sfobj)
+    keep <- is.finite(sfobj$area_m2) & sfobj$area_m2 >= rng[1] & sfobj$area_m2 <= rng[2]
+    sfobj[keep, ]
+  }
+  
+  # Robust ROI clip
+  clip_to_roi <- function(sfobj, roi_sf) {
+    if (is.null(sfobj) || nrow(sfobj) == 0 || is.null(roi_sf) || nrow(roi_sf) == 0) {
+      return(sfobj[0, , drop = FALSE])
+    }
+    
+    if (is.na(sf::st_crs(sfobj))) sf::st_crs(sfobj) <- 4326
+    if (sf::st_crs(sfobj) != sf::st_crs(roi_sf)) {
+      sfobj <- sf::st_transform(sfobj, sf::st_crs(roi_sf))
+    }
+    
+    roi_union <- sf::st_union(sf::st_make_valid(roi_sf))
+    
+    # fast prefilter
+    idx <- sf::st_intersects(sfobj, roi_union, sparse = FALSE)
+    sfobj <- sfobj[idx, , drop = FALSE]
+    if (nrow(sfobj) == 0) return(sfobj)
+    
+    out <- tryCatch(sf::st_intersection(sfobj, roi_union), error = function(e) NULL)
+    if (is.null(out) || nrow(out) == 0) return(sfobj[0, , drop = FALSE])
+    sf::st_make_valid(out)
+  }
+  
+  read_geojson_safe <- function(path) {
+    tryCatch({
+      x <- sf::st_read(path, quiet = TRUE)
+      x <- sf::st_zm(x, drop = TRUE, what = "ZM")
+      x <- sf::st_make_valid(x)
+      if (is.na(sf::st_crs(x))) sf::st_crs(x) <- 4326
+      sf::st_transform(x, 4326)
+    }, error = function(e) {
+      message("ERROR reading: ", path, " :: ", conditionMessage(e))
+      NULL
+    })
+  }
+  
+  # ---------------------------
+  # Lazy-load cache for big GeoJSONs
+  # ---------------------------
+  cache <- reactiveValues(
+    temporal = list(),  # per-year sf
+    v3 = NULL
+  )
+  
+  get_temporal_layer <- function(year) {
+    y <- as.character(year)
+    if (!is.null(cache$temporal[[y]])) return(cache$temporal[[y]])
+    
+    path <- TEMPORAL_FILES[[y]]
+    if (is.null(path) || !file.exists(path)) {
+      message("Temporal file missing for year ", y, ": ", path)
+      return(NULL)
+    }
+    
+    x <- read_geojson_safe(path)
+    cache$temporal[[y]] <- x
+    x
+  }
+  
+  get_v3_layer <- function() {
+    if (!is.null(cache$v3)) return(cache$v3)
+    if (!file.exists(V3_FILE)) {
+      message("V3 file missing: ", V3_FILE)
+      return(NULL)
+    }
+    cache$v3 <- read_geojson_safe(V3_FILE)
+    cache$v3
+  }
+  
+  # Local building computations
+  compute_temporal_in_roi <- function(roi_sf, year) {
+    layer <- get_temporal_layer(year)
+    if (is.null(layer) || nrow(layer) == 0) return(NULL)
+    clip_to_roi(layer, roi_sf)
+  }
+  
+  compute_v3_in_roi <- function(roi_sf) {
+    layer <- get_v3_layer()
+    if (is.null(layer) || nrow(layer) == 0) return(list(count = NA_real_, sf = NULL))
+    v <- clip_to_roi(layer, roi_sf)
+    list(count = nrow(v), sf = v)
   }
   
   # ---------------------------
@@ -186,12 +318,6 @@ server <- function(input, output, session) {
   })
   
   # ---------------------------
-  # Status
-  # ---------------------------
-  status <- reactiveVal("Choose a mode: Draw ROI, Wards, or UMN Areas…")
-  output$status <- renderText(status())
-  
-  # ---------------------------
   # State
   # ---------------------------
   rv <- reactiveValues(
@@ -206,7 +332,6 @@ server <- function(input, output, session) {
     year_area_list = NULL
   )
   
-  # interaction modes
   wards_on <- reactiveVal(FALSE)
   umn_on <- reactiveVal(FALSE)
   draw_on <- reactiveVal(FALSE)
@@ -268,39 +393,8 @@ server <- function(input, output, session) {
   }
   
   # ---------------------------
-  # Helpers
+  # Map draw helpers
   # ---------------------------
-  fmt_int <- function(x) {
-    if (is.null(x) || length(x) == 0) return("—")
-    x <- suppressWarnings(as.numeric(x[1]))
-    if (!is.finite(x)) return("—")
-    format(round(x, 0), big.mark = ",", scientific = FALSE, trim = TRUE)
-  }
-  
-  fmt_num0 <- function(x) {
-    if (!is.finite(x)) return("—")
-    format(round(x, 0), big.mark = ",", scientific = FALSE, trim = TRUE)
-  }
-  
-  feature_to_sf <- function(feature) {
-    gj <- jsonlite::toJSON(feature, auto_unbox = TRUE)
-    roi_sf <- geojsonsf::geojson_sf(gj)
-    sf::st_as_sf(sf::st_set_crs(roi_sf, 4326))
-  }
-  
-  prep_roi_sf <- function(x, simplify_m = 5) {
-    x <- sf::st_zm(x, drop = TRUE, what = "ZM")
-    x <- sf::st_make_valid(x)
-    g <- sf::st_union(x)
-    g <- sf::st_cast(g, "MULTIPOLYGON", warn = FALSE)
-    if (is.numeric(simplify_m) && simplify_m > 0) {
-      g_m <- sf::st_transform(g, 3857)
-      g_m <- sf::st_simplify(g_m, dTolerance = simplify_m, preserveTopology = TRUE)
-      g <- sf::st_transform(g_m, 4326)
-    }
-    sf::st_as_sf(sf::st_sfc(g, crs = 4326))
-  }
-  
   clear_map_overlays <- function() {
     leafletProxy("map") %>%
       clearGroup("ROI") %>%
@@ -331,7 +425,6 @@ server <- function(input, output, session) {
       )
   }
   
-  # selection draws into the SAME group (no "selected only" groups)
   draw_wards_all <- function() {
     leafletProxy("map") %>% clearGroup("Wards")
     if (is.null(wards_sf) || nrow(wards_sf) == 0) return()
@@ -360,77 +453,8 @@ server <- function(input, output, session) {
       )
   }
   
-  add_area_m2 <- function(sfobj) {
-    if (is.null(sfobj) || nrow(sfobj) == 0) return(sfobj)
-    if ("area_m2" %in% names(sfobj)) return(sfobj)
-    m <- tryCatch(sf::st_transform(sfobj, 3857), error = function(e) NULL)
-    if (is.null(m)) {
-      sfobj$area_m2 <- NA_real_
-      return(sfobj)
-    }
-    sfobj$area_m2 <- as.numeric(sf::st_area(m))
-    sfobj
-  }
-  
-  filter_by_range <- function(sfobj, rng) {
-    if (is.null(sfobj) || nrow(sfobj) == 0) return(sfobj)
-    sfobj <- add_area_m2(sfobj)
-    if (is.null(rng) || length(rng) != 2) return(sfobj)
-    keep <- is.finite(sfobj$area_m2) & sfobj$area_m2 >= rng[1] & sfobj$area_m2 <= rng[2]
-    sfobj[keep, ]
-  }
-  
-  clamp <- function(x, lo, hi) {
-    x <- as.numeric(x)
-    if (!is.finite(x)) return(lo)
-    max(lo, min(hi, x))
-  }
-  
   # ---------------------------
-  # Earth Engine helpers
-  # ---------------------------
-  epoch_s_for_year <- function(year) {
-    as.numeric(as.POSIXct(sprintf("%d-06-30 00:00:00", year), tz = "America/Los_Angeles")) %/% 1
-  }
-  
-  year_mosaic <- function(year) {
-    epoch_s <- epoch_s_for_year(year)
-    temporal_col$filter(ee$Filter$eq("inference_time_epoch_s", epoch_s))$mosaic()
-  }
-  
-  compute_presence_polygons <- function(roi_sf, year, thresh) {
-    roi_ee <- sf_as_ee(roi_sf)$geometry()
-    mosaic_img <- year_mosaic(year)
-    pres <- mosaic_img$select("building_presence")$unmask(0)
-    mask <- pres$gt(thresh)$selfMask()
-    vec <- tryCatch(
-      mask$reduceToVectors(
-        geometry = roi_ee, scale = 4,
-        geometryType = "polygon",
-        eightConnected = TRUE,
-        labelProperty = "mask",
-        maxPixels = 1e13,
-        tileScale = 4,
-        bestEffort = TRUE
-      ),
-      error = function(e) NULL
-    )
-    if (is.null(vec)) return(NULL)
-    vec_limited <- vec$limit(5000)
-    tryCatch(ee_as_sf(vec_limited), error = function(e) NULL)
-  }
-  
-  compute_v3_in_roi <- function(roi_sf) {
-    roi_ee <- sf_as_ee(roi_sf)$geometry()
-    fc_roi <- v3_fc$filterBounds(roi_ee)
-    n <- tryCatch(fc_roi$size()$getInfo(), error = function(e) NA_real_)
-    fc_disp <- fc_roi$limit(5000)
-    v3_sf2 <- tryCatch(ee_as_sf(fc_disp), error = function(e) NULL)
-    list(count = n, sf = v3_sf2)
-  }
-  
-  # ---------------------------
-  # Buildings in range + slider UI (+ min-size text input)
+  # Buildings in range + slider UI
   # ---------------------------
   buildings_in_range <- reactive({
     a <- rv$poly_last_areas_m2
@@ -616,14 +640,15 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
   
   # ---------------------------
-  # Time-series computation (auto, whenever ROI changes)
+  # Time-series computation
   # ---------------------------
   compute_year_area_list <- function(roi_sf) {
     out <- vector("list", length(YEARS))
     names(out) <- as.character(YEARS)
+    
     for (i in seq_along(YEARS)) {
       y <- YEARS[i]
-      p <- compute_presence_polygons(roi_sf, y, PRES_THRESH)
+      p <- compute_temporal_in_roi(roi_sf, y)
       if (is.null(p) || nrow(p) == 0) {
         out[[i]] <- numeric(0)
         next
@@ -659,7 +684,7 @@ server <- function(input, output, session) {
   })
   
   output$ts_plot <- renderPlot({
-    req(rv$roi_sf)  # ROI must exist
+    req(rv$roi_sf)
     
     ts <- ts_filtered()
     if (is.null(ts) || nrow(ts) == 0) {
@@ -673,7 +698,6 @@ server <- function(input, output, session) {
     b <- ts$building_count
     cvr <- ts$cover_pct
     
-    # V3 point for 2023 (filtered by current size range, if possible)
     rng <- input$size_range
     v3_count_2023 <- NA_real_
     if (!is.null(rv$v3_sf) && nrow(rv$v3_sf) > 0 && !is.null(rng) && length(rng) == 2) {
@@ -681,7 +705,6 @@ server <- function(input, output, session) {
       v3_keep <- is.finite(v3_tmp$area_m2) & v3_tmp$area_m2 >= rng[1] & v3_tmp$area_m2 <= rng[2]
       v3_count_2023 <- sum(v3_keep, na.rm = TRUE)
     } else if (is.finite(rv$v3_count)) {
-      # fallback: total V3 count in ROI (unfiltered)
       v3_count_2023 <- rv$v3_count
     }
     
@@ -705,7 +728,6 @@ server <- function(input, output, session) {
     
     text(mids, b + 0.03 * y1max, labels = format(round(b, 0), big.mark = ","), cex = 0.82)
     
-    # --- V3 point in RED at year 2023 ---
     if (is.finite(v3_count_2023)) {
       idx_2023 <- which(years == 2023)
       if (length(idx_2023) == 1) {
@@ -743,16 +765,14 @@ server <- function(input, output, session) {
   })
   
   # ---------------------------
-  # Main pipeline for ROI/Area (AUTO computes time series)
+  # Main pipeline for ROI
   # ---------------------------
   run_pipeline_for_roi <- function(roi_sf, label = "ROI") {
     status(paste0(label, " received. Computing polygons, histogram, and time-series…"))
     
     rv$roi_sf <- roi_sf
     rv$roi_geojson <- geojsonsf::sf_geojson(roi_sf)
-    
-    roi_ee <- sf_as_ee(roi_sf)$geometry()
-    rv$roi_area_m2 <- tryCatch(roi_ee$area(1)$getInfo(), error = function(e) NA_real_)
+    rv$roi_area_m2 <- roi_area_m2_local(roi_sf)
     
     draw_roi(roi_sf)
     
@@ -761,10 +781,10 @@ server <- function(input, output, session) {
     withProgress(message = "Computing ROI datasets…", value = 0, {
       incProgress(0.10)
       
-      rv$poly_first <- add_area_m2(compute_presence_polygons(roi_sf, FIRST_YEAR, PRES_THRESH))
+      rv$poly_first <- add_area_m2(compute_temporal_in_roi(roi_sf, FIRST_YEAR))
       incProgress(0.15)
       
-      rv$poly_last  <- add_area_m2(compute_presence_polygons(roi_sf, LAST_YEAR,  PRES_THRESH))
+      rv$poly_last  <- add_area_m2(compute_temporal_in_roi(roi_sf, LAST_YEAR))
       incProgress(0.15)
       
       rv$poly_last_areas_m2 <- NULL
@@ -779,13 +799,11 @@ server <- function(input, output, session) {
       rv$v3_sf <- add_area_m2(v3$sf)
       incProgress(0.10)
       
-      # Draw initial (unfiltered until slider is available)
       draw_polys(rv$poly_first, paste0("Buildings ", FIRST_YEAR, " (Temporal)"), "black", 0.35, 0.5, "black")
       draw_polys(rv$poly_last,  paste0("Buildings ", LAST_YEAR,  " (Temporal)"), "blue",  0.0,  2)
       draw_polys(rv$v3_sf, "Buildings V3 (polygons)", "red", 0.0, 1.2)
       incProgress(0.10)
       
-      # AUTO time-series
       incProgress(0.05)
       tryCatch({
         rv$year_area_list <- compute_year_area_list(roi_sf)
@@ -802,7 +820,7 @@ server <- function(input, output, session) {
   }
   
   # ---------------------------
-  # Mode toggles
+  # Toggle modes
   # ---------------------------
   observeEvent(input$toggle_wards, {
     if (is.null(wards_sf) || nrow(wards_sf) == 0) {
@@ -811,13 +829,10 @@ server <- function(input, output, session) {
     }
     
     if (!wards_on()) {
-      wards_on(TRUE)
-      umn_on(FALSE)
-      
+      wards_on(TRUE); umn_on(FALSE)
       draw_on(FALSE)
       session$sendCustomMessage("toggleDrawControls", list(show = FALSE))
       leafletProxy("map") %>% clearGroup("UMN Areas")
-      
       draw_wards_all()
       status("Wards shown. Click a ward to set ROI (other ROI shapes will be removed).")
     } else {
@@ -834,13 +849,10 @@ server <- function(input, output, session) {
     }
     
     if (!umn_on()) {
-      umn_on(TRUE)
-      wards_on(FALSE)
-      
+      umn_on(TRUE); wards_on(FALSE)
       draw_on(FALSE)
       session$sendCustomMessage("toggleDrawControls", list(show = FALSE))
       leafletProxy("map") %>% clearGroup("Wards")
-      
       draw_umn_all()
       status("UMN Areas shown. Click an area to set ROI (other ROI shapes will be removed).")
     } else {
@@ -854,8 +866,7 @@ server <- function(input, output, session) {
     draw_on(!draw_on())
     
     if (isTRUE(draw_on())) {
-      wards_on(FALSE)
-      umn_on(FALSE)
+      wards_on(FALSE); umn_on(FALSE)
       leafletProxy("map") %>% clearGroup("Wards") %>% clearGroup("UMN Areas")
     }
     
@@ -864,8 +875,7 @@ server <- function(input, output, session) {
   })
   
   # ---------------------------
-  # Shape click handler (Wards OR UMN)
-  # Removes all other ROI shapes when a selection is made.
+  # Shape click handler (Wards / UMN)
   # ---------------------------
   observeEvent(input$map_shape_click, {
     click <- input$map_shape_click
@@ -876,11 +886,8 @@ server <- function(input, output, session) {
       ward_poly <- wards_sf[wards_sf$WARD_ID_LEAFLET == as.character(click$id), ]
       if (nrow(ward_poly) == 0) return()
       
-      # Remove all other ROI shapes/layers first
       clear_map_overlays()
-      wards_on(FALSE)
-      umn_on(FALSE)
-      draw_on(FALSE)
+      wards_on(FALSE); umn_on(FALSE); draw_on(FALSE)
       session$sendCustomMessage("toggleDrawControls", list(show = FALSE))
       
       status(paste0("Ward ", click$id, " selected. Computing…"))
@@ -888,12 +895,8 @@ server <- function(input, output, session) {
       bb <- sf::st_bbox(ward_poly)
       leafletProxy("map") %>% fitBounds(bb$xmin, bb$ymin, bb$xmax, bb$ymax)
       
-      tryCatch({
-        ward_roi <- prep_roi_sf(ward_poly, simplify_m = 5)
-        run_pipeline_for_roi(ward_roi, label = paste0("Ward ", click$id))
-      }, error = function(e) {
-        status(paste0("EE error on ward click: ", conditionMessage(e)))
-      })
+      ward_roi <- prep_roi_sf(ward_poly, simplify_m = 5)
+      run_pipeline_for_roi(ward_roi, label = paste0("Ward ", click$id))
       return()
     }
     
@@ -901,11 +904,8 @@ server <- function(input, output, session) {
       u_poly <- umn_sf[umn_sf$UMN_ID_LEAFLET == as.character(click$id), ]
       if (nrow(u_poly) == 0) return()
       
-      # Remove all other ROI shapes/layers first
       clear_map_overlays()
-      wards_on(FALSE)
-      umn_on(FALSE)
-      draw_on(FALSE)
+      wards_on(FALSE); umn_on(FALSE); draw_on(FALSE)
       session$sendCustomMessage("toggleDrawControls", list(show = FALSE))
       
       status(paste0("UMN area ", click$id, " selected. Computing…"))
@@ -913,27 +913,21 @@ server <- function(input, output, session) {
       bb <- sf::st_bbox(u_poly)
       leafletProxy("map") %>% fitBounds(bb$xmin, bb$ymin, bb$xmax, bb$ymax)
       
-      tryCatch({
-        u_roi <- prep_roi_sf(u_poly, simplify_m = 5)
-        run_pipeline_for_roi(u_roi, label = paste0("UMN ", click$id))
-      }, error = function(e) {
-        status(paste0("EE error on UMN click: ", conditionMessage(e)))
-      })
+      u_roi <- prep_roi_sf(u_poly, simplify_m = 5)
+      run_pipeline_for_roi(u_roi, label = paste0("UMN ", click$id))
       return()
     }
   })
   
   # ---------------------------
   # ROI draw handler
-  # Removes all other ROI shapes when user draws.
   # ---------------------------
   observeEvent(input$map_draw_new_feature, {
     req(input$map_draw_new_feature)
     if (!isTRUE(draw_on())) return()
     
     clear_map_overlays()
-    wards_on(FALSE)
-    umn_on(FALSE)
+    wards_on(FALSE); umn_on(FALSE)
     
     roi_sf_raw <- feature_to_sf(input$map_draw_new_feature)
     roi_sf <- prep_roi_sf(roi_sf_raw, simplify_m = 0)
@@ -943,9 +937,7 @@ server <- function(input, output, session) {
   # Trash/delete reset
   observeEvent(input$map_draw_deleted_features, {
     clear_map_overlays()
-    wards_on(FALSE)
-    umn_on(FALSE)
-    draw_on(FALSE)
+    wards_on(FALSE); umn_on(FALSE); draw_on(FALSE)
     session$sendCustomMessage("toggleDrawControls", list(show = FALSE))
     
     rv$roi_sf <- NULL
@@ -1005,4 +997,3 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
-
