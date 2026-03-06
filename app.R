@@ -7,6 +7,23 @@
 # - Keeps Wards / UMN Areas / Draw modes + live size filtering + plots + CSV export
 # ------------------------------------------------------------
 
+
+# install.packages(c(
+#   "shiny",
+#   "leaflet",
+#   "leaflet.extras",
+#   "sf",
+#   "jsonlite",
+#   "geojsonsf",
+#   "htmlwidgets",
+#   "plotly"
+# ))
+
+#install.packages("leaflet.extras")
+
+#install.packages("remotes")
+#remotes::install_github("trafficonese/leaflet.extras")
+
 library(shiny)
 library(leaflet)
 library(leaflet.extras)
@@ -19,21 +36,32 @@ library(plotly)
 # ---------------------------
 # Local buildings data paths
 # ---------------------------
-TEMPORAL_DIR <- "/Users/rowandavies/Desktop/City Centric/HiltonBuildingsTool_local/data/V1 Temporal"
-V3_DIR       <- "/Users/rowandavies/Desktop/City Centric/HiltonBuildingsTool_local/data/V3 Shapefile"
+TEMPORAL_DIR <- "Data/V1 Temporal_large"
+V3_DIR       <- "Data/V3 Shapefile_large"
+
+# TEMPORAL_FILES <- list(
+#   "2016" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2016_wards_roi_thr0.5_2026_02_17_11_39_40.geojson"),
+#   "2017" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2017_wards_roi_thr0.5_2026_02_17_11_39_41.geojson"),
+#   "2018" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2018_wards_roi_thr0.5_2026_02_17_11_39_42.geojson"),
+#   "2019" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2019_wards_roi_thr0.5_2026_02_17_11_39_43.geojson"),
+#   "2020" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2020_wards_roi_thr0.5_2026_02_17_11_39_44.geojson"),
+#   "2021" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2021_wards_roi_thr0.5_2026_02_17_11_39_45.geojson"),
+#   "2022" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2022_wards_roi_thr0.5_2026_02_17_11_39_46.geojson"),
+#   "2023" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2023_wards_roi_thr0.5_2026_02_17_11_39_47.geojson")
+# )
 
 TEMPORAL_FILES <- list(
-  "2016" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2016_wards_roi_thr0.5_2026_02_17_11_39_40.geojson"),
-  "2017" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2017_wards_roi_thr0.5_2026_02_17_11_39_41.geojson"),
-  "2018" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2018_wards_roi_thr0.5_2026_02_17_11_39_42.geojson"),
-  "2019" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2019_wards_roi_thr0.5_2026_02_17_11_39_43.geojson"),
-  "2020" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2020_wards_roi_thr0.5_2026_02_17_11_39_44.geojson"),
-  "2021" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2021_wards_roi_thr0.5_2026_02_17_11_39_45.geojson"),
-  "2022" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2022_wards_roi_thr0.5_2026_02_17_11_39_46.geojson"),
-  "2023" = file.path(TEMPORAL_DIR, "openbuildings_temporal_v1_2023_wards_roi_thr0.5_2026_02_17_11_39_47.geojson")
+  "2016" = file.path(TEMPORAL_DIR, "V1_2016_UMN_Functional_Areas_3_withHeight.geojson"),
+  "2017" = file.path(TEMPORAL_DIR, "V1_2017_UMN_Functional_Areas_3_withHeight.geojson"),
+  "2018" = file.path(TEMPORAL_DIR, "V1_2018_UMN_Functional_Areas_3_withHeight.geojson"),
+  "2019" = file.path(TEMPORAL_DIR, "V1_2019_UMN_Functional_Areas_3_withHeight.geojson"),
+  "2020" = file.path(TEMPORAL_DIR, "V1_2020_UMN_Functional_Areas_3_withHeight.geojson"),
+  "2021" = file.path(TEMPORAL_DIR, "V1_2021_UMN_Functional_Areas_3_withHeight.geojson"),
+  "2022" = file.path(TEMPORAL_DIR, "V1_2022_UMN_Functional_Areas_3_withHeight.geojson"),
+  "2023" = file.path(TEMPORAL_DIR, "V1_2023_UMN_Functional_Areas_3_withHeight.geojson")
 )
 
-V3_FILE <- file.path(V3_DIR, "openbuildings_v3_wards_roi_2026_02_17_11_39_09.geojson")
+V3_FILE <- file.path(V3_DIR, "V3_2023_UMN_Functional_Areas_3.geojson")
 
 YEARS <- 2016:2023
 FIRST_YEAR <- 2016
@@ -43,27 +71,51 @@ LAST_YEAR  <- 2023
 PRES_THRESH <- 0.5
 
 # ---- local shapefiles ----
-wards_path <- "/Users/rowandavies/Desktop/City Centric/HiltonBuildingsTool_local/data/wards/Municipal_Wards_2021.shp"
-UMN_function_areas_path <- "/Users/rowandavies/Desktop/City Centric/HiltonBuildingsTool_local/data/umn/Analysis regions/UMN_Functional_Areas_1.shp"
+wards_path <- "Data/Wards/Municipal_Wards_2021.shp"
+
+UMN_function_areas_path <- "Data/Regions/UMN_Functional_Areas_3.shp"
+
+# app_dir <- normalizePath(getwd(), winslash = "/")  # if you always run app from its folder
+# wards_path <- file.path(app_dir, "Data/Wards/Municipal_Wards_2021.shp")
+# UMN_function_areas_path <- file.path(app_dir, "Data/Regions/UMN_Functional_Areas_3.shp")
+# 
+# message("getwd() = ", getwd())
+# message("wards_path = ", wards_path)
+# message("exists(wards_path) = ", file.exists(wards_path))
 
 ui <- fluidPage(
   titlePanel("Open Buildings Temporal V1 — Single ROI (LOCAL)"),
   tags$head(
-    tags$style(HTML("
-      .leaflet-draw { display: none; }
-      .rangeRow { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-      .rangeRight { text-align:right; white-space:nowrap; }
-      .smallHelp { font-size: 12px; color:#666; margin-top:4px; }
-    ")),
-    tags$script(HTML("
-      Shiny.addCustomMessageHandler('toggleDrawControls', function(msg) {
-        var el = document.querySelector('.leaflet-draw');
-        if (!el) return;
-        el.style.display = msg.show ? 'block' : 'none';
-      });
-    "))
+    tags$style(
+      HTML("
+        .leaflet-draw { display: none; }
+        .rangeRow { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+        .rangeRight { text-align:right; white-space:nowrap; }
+        .smallHelp { font-size: 12px; color:#666; margin-top:4px; }
+
+        /* Separate histogram panels so they don't blend */
+        .histoCard {
+          background: #ffffff;
+          border: 1px solid #e6e6e6;
+          border-radius: 6px;
+          padding: 10px;
+          margin-bottom: 16px;
+        }
+        .histoSpacer { height: 10px; }
+      ")
+    ),
+    tags$script(
+      HTML("
+        Shiny.addCustomMessageHandler('toggleDrawControls', function(msg) {
+          var el = document.querySelector('.leaflet-draw');
+          if (!el) return;
+          el.style.display = msg.show ? 'block' : 'none';
+        });
+      ")
+    )
   ),
   
+  # Top row: Map + right-side panels
   fluidRow(
     column(
       width = 8,
@@ -72,8 +124,8 @@ ui <- fluidPage(
         h4("Instructions"),
         tags$ol(
           tags$li("Choose an area for analysis: Draw ROI, Wards, or UMN Areas."),
-          tags$li(paste0("Histogram shows Temporal V1 ", LAST_YEAR, " polygon sizes (m²).")),
-          tags$li("Slider filters ALL overlays live; graphs reflect only the selected size range."),
+          tags$li(paste0("Histograms show Temporal V1 ", LAST_YEAR, " polygon sizes (m²) and heights (m).")),
+          tags$li("Size + height sliders filter ALL overlays live; histograms reflect the current filters."),
           tags$li("Graphs compute automatically when you select/draw an ROI.")
         )
       ),
@@ -83,7 +135,8 @@ ui <- fluidPage(
         actionButton("toggle_umn", "UMN Areas"),
         actionButton("toggle_draw", "Draw")
       ),
-      leafletOutput("map", height = 700)
+      
+      leafletOutput("map", height = 900)
     ),
     
     column(
@@ -94,19 +147,32 @@ ui <- fluidPage(
         downloadButton("download_csv", "Export CSV")
       ),
       
+      # --- Size histogram + size range slider (WITH manual min input) ---
       tags$div(
-        style = "display:flex; gap:10px; align-items:flex-end; margin-bottom:6px;",
-        sliderInput("hist_bins", "Histogram bins", min = 20, max = 250, value = 120, step = 5, width = "100%")
+        class = "histoCard",
+        plotlyOutput("size_hist", height = 260),
+        div(class = "histoSpacer"),
+        uiOutput("size_slider_ui")
       ),
       
-      plotlyOutput("size_hist", height = 260),
-      uiOutput("size_slider_ui"),
-      br(),
+      # --- Height histogram + height range slider (WITH manual min input) ---
+      tags$div(
+        class = "histoCard",
+        plotlyOutput("height_hist", height = 260),
+        div(class = "histoSpacer"),
+        uiOutput("height_slider_ui")
+      ),
       
-      plotOutput("ts_plot", height = 420),
-      
-      br(),
       verbatimTextOutput("status")
+    )
+  ),
+  
+  # Bar graph under the map, full width
+  fluidRow(
+    column(
+      width = 12,
+      br(),
+      plotOutput("ts_plot", height = 420)
     )
   )
 )
@@ -155,11 +221,13 @@ server <- function(input, output, session) {
     x <- sf::st_make_valid(x)
     g <- sf::st_union(x)
     g <- sf::st_cast(g, "MULTIPOLYGON", warn = FALSE)
+    
     if (is.numeric(simplify_m) && simplify_m > 0) {
       g_m <- sf::st_transform(g, 3857)
       g_m <- sf::st_simplify(g_m, dTolerance = simplify_m, preserveTopology = TRUE)
       g <- sf::st_transform(g_m, 4326)
     }
+    
     sf::st_as_sf(sf::st_sfc(g, crs = 4326))
   }
   
@@ -173,11 +241,13 @@ server <- function(input, output, session) {
   add_area_m2 <- function(sfobj) {
     if (is.null(sfobj) || nrow(sfobj) == 0) return(sfobj)
     if ("area_m2" %in% names(sfobj)) return(sfobj)
+    
     m <- tryCatch(sf::st_transform(sfobj, 3857), error = function(e) NULL)
     if (is.null(m)) {
       sfobj$area_m2 <- NA_real_
       return(sfobj)
     }
+    
     sfobj$area_m2 <- as.numeric(sf::st_area(m))
     sfobj
   }
@@ -185,12 +255,72 @@ server <- function(input, output, session) {
   filter_by_range <- function(sfobj, rng) {
     if (is.null(sfobj) || nrow(sfobj) == 0) return(sfobj)
     sfobj <- add_area_m2(sfobj)
-    if (is.null(rng) || length(rng) != 2) return(sfobj)
-    keep <- is.finite(sfobj$area_m2) & sfobj$area_m2 >= rng[1] & sfobj$area_m2 <= rng[2]
-    sfobj[keep, ]
+    if (is.null(rng) || length(rng) != 2 || any(!is.finite(rng))) return(sfobj)
+    
+    keep <- is.finite(sfobj$area_m2) &
+      sfobj$area_m2 >= rng[1] &
+      sfobj$area_m2 <= rng[2]
+    
+    sfobj[keep, , drop = FALSE]
   }
   
-  # Robust ROI clip
+  # robust height extraction
+  extract_height_m <- function(
+    sfobj,
+    prefer = c("height_mean_m", "height_median_m", "height_p95_m")
+  ) {
+    if (is.null(sfobj) || nrow(sfobj) == 0) return(numeric(0))
+    
+    candidates <- c(
+      prefer,
+      "height_mean", "height_median", "height_p95",
+      "height", "HEIGHT",
+      "building_height", "BUILDING_HEIGHT",
+      "bldg_height", "BLDG_HEIGHT",
+      "bldg_hgt", "BLDG_HGT",
+      "hgt", "HGT",
+      "height_m", "HEIGHT_M",
+      "roof_height", "ROOF_HEIGHT",
+      "mean_height", "MEAN_HEIGHT",
+      "mean", "median", "p95"
+    )
+    
+    hcol <- candidates[candidates %in% names(sfobj)][1]
+    if (is.na(hcol) || is.null(hcol)) return(numeric(0))
+    
+    h <- suppressWarnings(as.numeric(sfobj[[hcol]]))
+    h <- h[is.finite(h)]
+    h <- h[h > 0]
+    h
+  }
+  
+  # filter sf by height range
+  filter_by_height <- function(sfobj, hrng) {
+    if (is.null(sfobj) || nrow(sfobj) == 0) return(sfobj)
+    if (is.null(hrng) || length(hrng) != 2 || any(!is.finite(hrng))) return(sfobj)
+    
+    candidates <- c(
+      "height_mean_m", "height_median_m", "height_p95_m",
+      "height_mean", "height_median", "height_p95",
+      "height", "HEIGHT",
+      "building_height", "BUILDING_HEIGHT",
+      "bldg_height", "BLDG_HEIGHT",
+      "bldg_hgt", "BLDG_HGT",
+      "hgt", "HGT",
+      "height_m", "HEIGHT_M",
+      "roof_height", "ROOF_HEIGHT",
+      "mean_height", "MEAN_HEIGHT",
+      "mean", "median", "p95"
+    )
+    
+    hcol <- candidates[candidates %in% names(sfobj)][1]
+    if (is.na(hcol) || is.null(hcol)) return(sfobj)  # if no height field, do not filter
+    
+    h <- suppressWarnings(as.numeric(sfobj[[hcol]]))
+    keep <- is.finite(h) & h > 0 & h >= hrng[1] & h <= hrng[2]
+    sfobj[keep, , drop = FALSE]
+  }
+  
   clip_to_roi <- function(sfobj, roi_sf) {
     if (is.null(sfobj) || nrow(sfobj) == 0 || is.null(roi_sf) || nrow(roi_sf) == 0) {
       return(sfobj[0, , drop = FALSE])
@@ -203,13 +333,13 @@ server <- function(input, output, session) {
     
     roi_union <- sf::st_union(sf::st_make_valid(roi_sf))
     
-    # fast prefilter
     idx <- sf::st_intersects(sfobj, roi_union, sparse = FALSE)
     sfobj <- sfobj[idx, , drop = FALSE]
     if (nrow(sfobj) == 0) return(sfobj)
     
     out <- tryCatch(sf::st_intersection(sfobj, roi_union), error = function(e) NULL)
     if (is.null(out) || nrow(out) == 0) return(sfobj[0, , drop = FALSE])
+    
     sf::st_make_valid(out)
   }
   
@@ -230,7 +360,7 @@ server <- function(input, output, session) {
   # Lazy-load cache for big GeoJSONs
   # ---------------------------
   cache <- reactiveValues(
-    temporal = list(),  # per-year sf
+    temporal = list(),
     v3 = NULL
   )
   
@@ -255,11 +385,11 @@ server <- function(input, output, session) {
       message("V3 file missing: ", V3_FILE)
       return(NULL)
     }
+    
     cache$v3 <- read_geojson_safe(V3_FILE)
     cache$v3
   }
   
-  # Local building computations
   compute_temporal_in_roi <- function(roi_sf, year) {
     layer <- get_temporal_layer(year)
     if (is.null(layer) || nrow(layer) == 0) return(NULL)
@@ -382,8 +512,10 @@ server <- function(input, output, session) {
   
   umn_id_col <- NULL
   if (!is.null(umn_sf) && nrow(umn_sf) > 0) {
-    candidates <- c("AREA", "AREA_ID", "ID", "NAME", "Name", "REGION", "REGION_ID",
-                    "ZONE", "ZONE_ID", "FUNCTION", "FUNC_AREA")
+    candidates <- c(
+      "AREA", "AREA_ID", "ID", "NAME", "Name", "REGION", "REGION_ID",
+      "ZONE", "ZONE_ID", "FUNCTION", "FUNC_AREA"
+    )
     umn_id_col <- candidates[candidates %in% names(umn_sf)][1]
     if (is.na(umn_id_col) || is.null(umn_id_col)) {
       umn_sf$UMN_ID <- seq_len(nrow(umn_sf))
@@ -408,12 +540,19 @@ server <- function(input, output, session) {
   draw_roi <- function(roi_sf) {
     leafletProxy("map") %>%
       clearGroup("ROI") %>%
-      addPolygons(data = roi_sf, group = "ROI", color = "black", weight = 3, fillOpacity = 0.12)
+      addPolygons(
+        data = roi_sf,
+        group = "ROI",
+        color = "black",
+        weight = 3,
+        fillOpacity = 0.12
+      )
   }
   
   draw_polys <- function(poly_sf, group, color, fillOpacity, weight, fillColor = NULL) {
     leafletProxy("map") %>% clearGroup(group)
     if (is.null(poly_sf) || nrow(poly_sf) == 0) return()
+    
     leafletProxy("map") %>%
       addPolygons(
         data = poly_sf,
@@ -428,13 +567,17 @@ server <- function(input, output, session) {
   draw_wards_all <- function() {
     leafletProxy("map") %>% clearGroup("Wards")
     if (is.null(wards_sf) || nrow(wards_sf) == 0) return()
+    
     leafletProxy("map") %>%
       addPolygons(
         data = wards_sf,
         group = "Wards",
         layerId = ~WARD_ID_LEAFLET,
-        color = "#FF7A00", weight = 3, opacity = 0.9,
-        fillColor = "#FF7A00", fillOpacity = 0.12,
+        color = "#FF7A00",
+        weight = 3,
+        opacity = 0.9,
+        fillColor = "#FF7A00",
+        fillOpacity = 0.12,
         label = ~paste0("Ward: ", WARD_ID_LEAFLET)
       )
   }
@@ -442,29 +585,35 @@ server <- function(input, output, session) {
   draw_umn_all <- function() {
     leafletProxy("map") %>% clearGroup("UMN Areas")
     if (is.null(umn_sf) || nrow(umn_sf) == 0) return()
+    
     leafletProxy("map") %>%
       addPolygons(
         data = umn_sf,
         group = "UMN Areas",
         layerId = ~UMN_ID_LEAFLET,
-        color = "#7B61FF", weight = 3, opacity = 0.9,
-        fillColor = "#7B61FF", fillOpacity = 0.12,
+        color = "#7B61FF",
+        weight = 3,
+        opacity = 0.9,
+        fillColor = "#7B61FF",
+        fillOpacity = 0.12,
         label = ~paste0("UMN: ", UMN_ID_LEAFLET)
       )
   }
   
   # ---------------------------
-  # Buildings in range + slider UI
+  # Size slider UI (WITH manual min)
   # ---------------------------
-  buildings_in_range <- reactive({
+  buildings_in_size_range <- reactive({
     a <- rv$poly_last_areas_m2
     rng <- input$size_range
+    
     if (is.null(a) || length(a) == 0) return(0L)
     if (is.null(rng) || length(rng) != 2) return(length(a))
+    
     sum(is.finite(a) & a >= rng[1] & a <= rng[2])
   })
   
-  output$buildings_in_range_txt <- renderText(fmt_num0(buildings_in_range()))
+  output$buildings_in_size_range_txt <- renderText(fmt_num0(buildings_in_size_range()))
   
   output$size_slider_ui <- renderUI({
     a <- rv$poly_last_areas_m2
@@ -490,7 +639,8 @@ server <- function(input, output, session) {
         "min_size_m2",
         "Minimum building size (m²)",
         value = min_user,
-        min = min_a, max = max_a, step = 1
+        min = min_a, max = max_a,
+        step = 1
       ),
       tags$div(
         class = "rangeRow",
@@ -508,7 +658,7 @@ server <- function(input, output, session) {
         tags$div(
           class = "rangeRight",
           tags$strong("Buildings in range:"),
-          tags$div(textOutput("buildings_in_range_txt"))
+          tags$div(textOutput("buildings_in_size_range_txt"))
         )
       )
     )
@@ -530,54 +680,149 @@ server <- function(input, output, session) {
     cur_max <- if (!is.null(cur) && length(cur) == 2 && is.finite(cur[2])) cur[2] else max_a
     cur_max <- clamp(cur_max, min_user, max_a)
     
-    updateSliderInput(
-      session, "size_range",
-      min = min_user,
-      max = max_a,
-      value = c(min_user, cur_max)
-    )
+    updateSliderInput(session, "size_range", min = min_user, max = max_a, value = c(min_user, cur_max))
   }, ignoreInit = TRUE)
   
   # ---------------------------
-  # Histogram (plotly) — NO ZOOM / PAN
+  # Height slider UI (WITH manual min) — range computed from LAST_YEAR heights filtered by current size_range
   # ---------------------------
-  output$size_hist <- renderPlotly({
-    a <- rv$poly_last_areas_m2
+  heights_last_filtered_by_size <- reactive({
+    p_last <- rv$poly_last
+    if (is.null(p_last) || nrow(p_last) == 0) return(numeric(0))
     
-    if (is.null(a) || length(a) == 0) {
+    srng <- input$size_range
+    if (!is.null(srng) && length(srng) == 2 && all(is.finite(srng))) {
+      p_last <- filter_by_range(p_last, srng)
+    }
+    
+    h <- extract_height_m(p_last)
+    h <- h[is.finite(h) & h > 0]
+    h
+  })
+  
+  buildings_in_height_range <- reactive({
+    h <- heights_last_filtered_by_size()
+    hrng <- input$height_range
+    
+    if (length(h) == 0) return(0L)
+    if (is.null(hrng) || length(hrng) != 2 || any(!is.finite(hrng))) return(length(h))
+    
+    sum(h >= hrng[1] & h <= hrng[2], na.rm = TRUE)
+  })
+  
+  output$buildings_in_height_range_txt <- renderText(fmt_num0(buildings_in_height_range()))
+  
+  output$height_slider_ui <- renderUI({
+    h <- heights_last_filtered_by_size()
+    if (length(h) == 0) return(NULL)
+    
+    min_h <- floor(min(h))
+    max_h <- ceiling(max(h))
+    if (!is.finite(min_h) || !is.finite(max_h) || min_h >= max_h) return(NULL)
+    
+    cur <- isolate(input$height_range)
+    cur_max <- if (!is.null(cur) && length(cur) == 2 && all(is.finite(cur))) cur[2] else max_h
+    
+    min_user <- isolate(input$min_height_m)
+    if (is.null(min_user) || !is.finite(min_user)) min_user <- min_h
+    min_user <- clamp(min_user, min_h, max_h)
+    
+    cur_max <- clamp(cur_max, min_user, max_h)
+    
+    tags$div(
+      numericInput(
+        "min_height_m",
+        "Minimum building height (m)",
+        value = min_user,
+        min = min_h, max = max_h,
+        step = 0.5
+      ),
+      tags$div(
+        class = "rangeRow",
+        tags$div(
+          style = "flex:1;",
+          sliderInput(
+            "height_range",
+            "Building height range (m)",
+            min = min_user,
+            max = max_h,
+            value = c(min_user, cur_max),
+            step = 0.5
+          )
+        ),
+        tags$div(
+          class = "rangeRight",
+          tags$strong("Buildings in range:"),
+          tags$div(textOutput("buildings_in_height_range_txt"))
+        )
+      )
+    )
+  })
+  
+  observeEvent(input$min_height_m, {
+    h <- heights_last_filtered_by_size()
+    if (length(h) == 0) return()
+    
+    min_h <- floor(min(h))
+    max_h <- ceiling(max(h))
+    
+    min_user <- clamp(input$min_height_m, min_h, max_h)
+    
+    cur <- input$height_range
+    cur_max <- if (!is.null(cur) && length(cur) == 2 && is.finite(cur[2])) cur[2] else max_h
+    cur_max <- clamp(cur_max, min_user, max_h)
+    
+    updateSliderInput(session, "height_range", min = min_user, max = max_h, value = c(min_user, cur_max))
+  }, ignoreInit = TRUE)
+  
+  # ---------------------------
+  # Histograms (fixed bin counts; bin sliders removed)
+  # ---------------------------
+  NB_SIZE  <- 120
+  NB_HEIGHT <- 120
+  
+  output$size_hist <- renderPlotly({
+    p_last <- rv$poly_last
+    if (is.null(p_last) || nrow(p_last) == 0) {
       p <- plot_ly(x = numeric(0), type = "histogram") %>%
         layout(
-          title = paste0("Temporal V1 ", LAST_YEAR, ": no polygon areas"),
+          title = paste0("Temporal V1 ", LAST_YEAR, ": no polygons (size)"),
           xaxis = list(title = "Polygon area (m²)"),
           yaxis = list(title = "Count")
         )
       return(config(p, staticPlot = TRUE))
     }
     
+    # Apply HEIGHT filter to size histogram so it reflects current filters
+    hrng <- input$height_range
+    if (!is.null(hrng) && length(hrng) == 2 && all(is.finite(hrng))) {
+      p_last <- filter_by_height(p_last, hrng)
+    }
+    
+    p_last <- add_area_m2(p_last)
+    a <- p_last$area_m2
     a <- a[is.finite(a) & a > 0]
+    
     if (length(a) == 0) {
       p <- plot_ly(x = numeric(0), type = "histogram") %>%
         layout(
-          title = paste0("Temporal V1 ", LAST_YEAR, ": no valid areas"),
+          title = paste0("Temporal V1 ", LAST_YEAR, ": no valid areas (after height filter)"),
           xaxis = list(title = "Polygon area (m²)"),
           yaxis = list(title = "Count")
         )
       return(config(p, staticPlot = TRUE))
     }
     
-    nb <- as.numeric(coalesce(input$hist_bins, 120))
-    if (!is.finite(nb) || nb <= 0) nb <- 120
-    
     xmin <- min(a)
     xmax <- max(a)
-    binw <- max(1, (xmax - xmin) / nb)
+    binw <- max(1, (xmax - xmin) / NB_SIZE)
     
-    rng <- input$size_range
+    srng <- input$size_range
     shapes <- list()
-    if (!is.null(rng) && length(rng) == 2) {
+    if (!is.null(srng) && length(srng) == 2 && all(is.finite(srng))) {
       shapes <- list(
-        list(type = "line", x0 = rng[1], x1 = rng[1], y0 = 0, y1 = 1, yref = "paper", line = list(width = 2)),
-        list(type = "line", x0 = rng[2], x1 = rng[2], y0 = 0, y1 = 1, yref = "paper", line = list(width = 2))
+        list(type = "line", x0 = srng[1], x1 = srng[1], y0 = 0, y1 = 1, yref = "paper", line = list(width = 2)),
+        list(type = "line", x0 = srng[2], x1 = srng[2], y0 = 0, y1 = 1, yref = "paper", line = list(width = 2))
       )
     }
     
@@ -595,23 +840,95 @@ server <- function(input, output, session) {
         bargap = 0.02
       )
     
-    config(
-      p,
-      staticPlot = TRUE,
-      displayModeBar = FALSE
-    )
+    config(p, staticPlot = TRUE, displayModeBar = FALSE)
+  })
+  
+  output$height_hist <- renderPlotly({
+    p_last <- rv$poly_last
+    if (is.null(p_last) || nrow(p_last) == 0) {
+      p <- plot_ly(x = numeric(0), type = "histogram") %>%
+        layout(
+          title = paste0("Temporal V1 ", LAST_YEAR, ": no polygons (height)"),
+          xaxis = list(title = "Building height (m)"),
+          yaxis = list(title = "Count")
+        )
+      return(config(p, staticPlot = TRUE))
+    }
+    
+    # Apply SIZE filter to height histogram so it reflects current filters
+    srng <- input$size_range
+    if (!is.null(srng) && length(srng) == 2 && all(is.finite(srng))) {
+      p_last <- filter_by_range(p_last, srng)
+    }
+    
+    h <- extract_height_m(p_last)
+    if (length(h) == 0) {
+      p <- plot_ly(x = numeric(0), type = "histogram") %>%
+        layout(
+          title = paste0("Temporal V1 ", LAST_YEAR, ": no valid building heights (after size filter)"),
+          xaxis = list(title = "Building height (m)"),
+          yaxis = list(title = "Count")
+        )
+      return(config(p, staticPlot = TRUE))
+    }
+    
+    xmin <- min(h)
+    xmax <- max(h)
+    binw <- (xmax - xmin) / NB_HEIGHT
+    if (!is.finite(binw) || binw <= 0) binw <- 1
+    
+    hrng <- input$height_range
+    shapes <- list()
+    if (!is.null(hrng) && length(hrng) == 2 && all(is.finite(hrng))) {
+      shapes <- list(
+        list(type = "line", x0 = hrng[1], x1 = hrng[1], y0 = 0, y1 = 1, yref = "paper", line = list(width = 2)),
+        list(type = "line", x0 = hrng[2], x1 = hrng[2], y0 = 0, y1 = 1, yref = "paper", line = list(width = 2))
+      )
+    }
+    
+    p <- plot_ly(
+      x = h,
+      type = "histogram",
+      autobinx = FALSE,
+      xbins = list(start = xmin, end = xmax, size = binw)
+    ) %>%
+      layout(
+        title = paste0("Temporal V1 ", LAST_YEAR, ": building heights"),
+        xaxis = list(title = "Building height (m)", fixedrange = TRUE),
+        yaxis = list(title = "Count", fixedrange = TRUE),
+        shapes = shapes,
+        bargap = 0.02
+      )
+    
+    config(p, staticPlot = TRUE, displayModeBar = FALSE)
   })
   
   # ---------------------------
-  # Live filtering of ALL datasets on the map as slider moves
+  # Live filtering of ALL datasets on the map as sliders move (SIZE + HEIGHT combined)
   # ---------------------------
-  observeEvent(input$size_range, {
+  observeEvent(list(input$size_range, input$height_range), {
     req(rv$roi_sf)
-    rng <- input$size_range
     
-    p_first <- filter_by_range(rv$poly_first, rng)
-    p_last  <- filter_by_range(rv$poly_last,  rng)
-    p_v3    <- filter_by_range(rv$v3_sf,      rng)
+    srng <- input$size_range
+    hrng <- input$height_range
+    
+    p_first <- rv$poly_first
+    p_last  <- rv$poly_last
+    p_v3    <- rv$v3_sf
+    
+    # apply size filter first
+    if (!is.null(srng) && length(srng) == 2 && all(is.finite(srng))) {
+      p_first <- filter_by_range(p_first, srng)
+      p_last  <- filter_by_range(p_last,  srng)
+      p_v3    <- filter_by_range(p_v3,    srng)
+    }
+    
+    # then apply height filter (Temporal layers)
+    if (!is.null(hrng) && length(hrng) == 2 && all(is.finite(hrng))) {
+      p_first <- filter_by_height(p_first, hrng)
+      p_last  <- filter_by_height(p_last,  hrng)
+      # V3 likely lacks heights, so we do not height-filter it
+    }
     
     draw_polys(
       p_first,
@@ -640,7 +957,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
   
   # ---------------------------
-  # Time-series computation
+  # Time-series computation (filtered by SIZE only, like your original logic)
   # ---------------------------
   compute_year_area_list <- function(roi_sf) {
     out <- vector("list", length(YEARS))
@@ -649,35 +966,47 @@ server <- function(input, output, session) {
     for (i in seq_along(YEARS)) {
       y <- YEARS[i]
       p <- compute_temporal_in_roi(roi_sf, y)
+      
       if (is.null(p) || nrow(p) == 0) {
         out[[i]] <- numeric(0)
         next
       }
+      
       p <- add_area_m2(p)
       a <- p$area_m2
       a <- a[is.finite(a) & a > 0]
       out[[i]] <- a
     }
+    
     out
   }
   
   ts_filtered <- reactive({
     req(rv$year_area_list, rv$roi_area_m2)
-    rng <- input$size_range
-    if (is.null(rng) || length(rng) != 2) return(NULL)
+    srng <- input$size_range
+    if (is.null(srng) || length(srng) != 2 || any(!is.finite(srng))) return(NULL)
     
     roi_m2 <- rv$roi_area_m2
-    if (!is.finite(roi_m2) || roi_m2 <= 0) return(NULL)
+    if (!is.finite(roi_m2) || roi_m2 <= 0) return(NULL
+                                                  
+    )
     
     yrs <- as.integer(names(rv$year_area_list))
     yrs <- yrs[order(yrs)]
     
     rows <- lapply(yrs, function(y) {
       a <- rv$year_area_list[[as.character(y)]]
-      a_sel <- a[a >= rng[1] & a <= rng[2]]
+      a_sel <- a[a >= srng[1] & a <= srng[2]]
+      total_area <- sum(a_sel, na.rm = TRUE)
       cnt <- length(a_sel)
-      cover <- if (length(a_sel) > 0) 100 * (sum(a_sel) / roi_m2) else 0
-      data.frame(year = y, building_count = cnt, cover_pct = cover)
+      cover <- if (length(a_sel) > 0) 100 * (total_area / roi_m2) else 0
+      
+      data.frame(
+        year = y,
+        building_count = cnt,
+        total_built_area_m2 = total_area,
+        cover_pct = cover
+      )
     })
     
     do.call(rbind, rows)
@@ -698,11 +1027,14 @@ server <- function(input, output, session) {
     b <- ts$building_count
     cvr <- ts$cover_pct
     
-    rng <- input$size_range
+    srng <- input$size_range
     v3_count_2023 <- NA_real_
-    if (!is.null(rv$v3_sf) && nrow(rv$v3_sf) > 0 && !is.null(rng) && length(rng) == 2) {
+    
+    if (!is.null(rv$v3_sf) && nrow(rv$v3_sf) > 0 && !is.null(srng) && length(srng) == 2) {
       v3_tmp <- add_area_m2(rv$v3_sf)
-      v3_keep <- is.finite(v3_tmp$area_m2) & v3_tmp$area_m2 >= rng[1] & v3_tmp$area_m2 <= rng[2]
+      v3_keep <- is.finite(v3_tmp$area_m2) &
+        v3_tmp$area_m2 >= srng[1] &
+        v3_tmp$area_m2 <= srng[2]
       v3_count_2023 <- sum(v3_keep, na.rm = TRUE)
     } else if (is.finite(rv$v3_count)) {
       v3_count_2023 <- rv$v3_count
@@ -726,7 +1058,12 @@ server <- function(input, output, session) {
       border = NA
     )
     
-    text(mids, b + 0.03 * y1max, labels = format(round(b, 0), big.mark = ","), cex = 0.82)
+    text(
+      mids,
+      b + 0.03 * y1max,
+      labels = format(round(b, 0), big.mark = ","),
+      cex = 0.82
+    )
     
     if (is.finite(v3_count_2023)) {
       idx_2023 <- which(years == 2023)
@@ -752,7 +1089,12 @@ server <- function(input, output, session) {
     axis(4)
     mtext("% land covered (filtered)", side = 4, line = 3)
     
-    text(mids, cvr + 0.04 * diff(y2lim), labels = paste0(round(cvr, 1), "%"), cex = 0.82)
+    text(
+      mids,
+      cvr + 0.04 * diff(y2lim),
+      labels = paste0(round(cvr, 1), "%"),
+      cex = 0.82
+    )
     
     legend(
       "topleft",
@@ -768,7 +1110,7 @@ server <- function(input, output, session) {
   # Main pipeline for ROI
   # ---------------------------
   run_pipeline_for_roi <- function(roi_sf, label = "ROI") {
-    status(paste0(label, " received. Computing polygons, histogram, and time-series…"))
+    status(paste0(label, " received. Computing polygons, histograms, and time-series…"))
     
     rv$roi_sf <- roi_sf
     rv$roi_geojson <- geojsonsf::sf_geojson(roi_sf)
@@ -784,7 +1126,7 @@ server <- function(input, output, session) {
       rv$poly_first <- add_area_m2(compute_temporal_in_roi(roi_sf, FIRST_YEAR))
       incProgress(0.15)
       
-      rv$poly_last  <- add_area_m2(compute_temporal_in_roi(roi_sf, LAST_YEAR))
+      rv$poly_last <- add_area_m2(compute_temporal_in_roi(roi_sf, LAST_YEAR))
       incProgress(0.15)
       
       rv$poly_last_areas_m2 <- NULL
@@ -799,9 +1141,28 @@ server <- function(input, output, session) {
       rv$v3_sf <- add_area_m2(v3$sf)
       incProgress(0.10)
       
-      draw_polys(rv$poly_first, paste0("Buildings ", FIRST_YEAR, " (Temporal)"), "black", 0.35, 0.5, "black")
-      draw_polys(rv$poly_last,  paste0("Buildings ", LAST_YEAR,  " (Temporal)"), "blue",  0.0,  2)
-      draw_polys(rv$v3_sf, "Buildings V3 (polygons)", "red", 0.0, 1.2)
+      # initial draw (apply current filters if already set)
+      srng <- input$size_range
+      hrng <- input$height_range
+      
+      p_first <- rv$poly_first
+      p_last  <- rv$poly_last
+      p_v3    <- rv$v3_sf
+      
+      if (!is.null(srng) && length(srng) == 2 && all(is.finite(srng))) {
+        p_first <- filter_by_range(p_first, srng)
+        p_last  <- filter_by_range(p_last,  srng)
+        p_v3    <- filter_by_range(p_v3,    srng)
+      }
+      if (!is.null(hrng) && length(hrng) == 2 && all(is.finite(hrng))) {
+        p_first <- filter_by_height(p_first, hrng)
+        p_last  <- filter_by_height(p_last,  hrng)
+      }
+      
+      draw_polys(p_first, paste0("Buildings ", FIRST_YEAR, " (Temporal)"), "black", 0.35, 0.5, "black")
+      draw_polys(p_last,  paste0("Buildings ", LAST_YEAR,  " (Temporal)"), "blue",  0.0,  2)
+      draw_polys(p_v3, "Buildings V3 (polygons)", "red", 0.0, 1.2)
+      
       incProgress(0.10)
       
       incProgress(0.05)
@@ -814,9 +1175,7 @@ server <- function(input, output, session) {
       incProgress(0.35)
     })
     
-    if (!is.null(rv$year_area_list)) {
-      status("Done. Adjust the size slider to filter map + graphs live.")
-    }
+    status("Done. Adjust the size/height sliders to filter map + histograms live.")
   }
   
   # ---------------------------
@@ -829,8 +1188,10 @@ server <- function(input, output, session) {
     }
     
     if (!wards_on()) {
-      wards_on(TRUE); umn_on(FALSE)
+      wards_on(TRUE)
+      umn_on(FALSE)
       draw_on(FALSE)
+      
       session$sendCustomMessage("toggleDrawControls", list(show = FALSE))
       leafletProxy("map") %>% clearGroup("UMN Areas")
       draw_wards_all()
@@ -849,8 +1210,10 @@ server <- function(input, output, session) {
     }
     
     if (!umn_on()) {
-      umn_on(TRUE); wards_on(FALSE)
+      umn_on(TRUE)
+      wards_on(FALSE)
       draw_on(FALSE)
+      
       session$sendCustomMessage("toggleDrawControls", list(show = FALSE))
       leafletProxy("map") %>% clearGroup("Wards")
       draw_umn_all()
@@ -866,7 +1229,8 @@ server <- function(input, output, session) {
     draw_on(!draw_on())
     
     if (isTRUE(draw_on())) {
-      wards_on(FALSE); umn_on(FALSE)
+      wards_on(FALSE)
+      umn_on(FALSE)
       leafletProxy("map") %>% clearGroup("Wards") %>% clearGroup("UMN Areas")
     }
     
@@ -887,7 +1251,9 @@ server <- function(input, output, session) {
       if (nrow(ward_poly) == 0) return()
       
       clear_map_overlays()
-      wards_on(FALSE); umn_on(FALSE); draw_on(FALSE)
+      wards_on(FALSE)
+      umn_on(FALSE)
+      draw_on(FALSE)
       session$sendCustomMessage("toggleDrawControls", list(show = FALSE))
       
       status(paste0("Ward ", click$id, " selected. Computing…"))
@@ -905,7 +1271,9 @@ server <- function(input, output, session) {
       if (nrow(u_poly) == 0) return()
       
       clear_map_overlays()
-      wards_on(FALSE); umn_on(FALSE); draw_on(FALSE)
+      wards_on(FALSE)
+      umn_on(FALSE)
+      draw_on(FALSE)
       session$sendCustomMessage("toggleDrawControls", list(show = FALSE))
       
       status(paste0("UMN area ", click$id, " selected. Computing…"))
@@ -927,7 +1295,8 @@ server <- function(input, output, session) {
     if (!isTRUE(draw_on())) return()
     
     clear_map_overlays()
-    wards_on(FALSE); umn_on(FALSE)
+    wards_on(FALSE)
+    umn_on(FALSE)
     
     roi_sf_raw <- feature_to_sf(input$map_draw_new_feature)
     roi_sf <- prep_roi_sf(roi_sf_raw, simplify_m = 0)
@@ -937,7 +1306,9 @@ server <- function(input, output, session) {
   # Trash/delete reset
   observeEvent(input$map_draw_deleted_features, {
     clear_map_overlays()
-    wards_on(FALSE); umn_on(FALSE); draw_on(FALSE)
+    wards_on(FALSE)
+    umn_on(FALSE)
+    draw_on(FALSE)
     session$sendCustomMessage("toggleDrawControls", list(show = FALSE))
     
     rv$roi_sf <- NULL
@@ -957,12 +1328,15 @@ server <- function(input, output, session) {
   # Output: ROI area
   # ---------------------------
   output$roi_area_m2 <- renderText({
-    if (is.null(rv$roi_area_m2) || !is.finite(rv$roi_area_m2)) "ROI area (m²): —"
-    else paste0("ROI area (m²): ", fmt_int(rv$roi_area_m2))
+    if (is.null(rv$roi_area_m2) || !is.finite(rv$roi_area_m2)) {
+      "ROI area (m²): —"
+    } else {
+      paste0("ROI area (m²): ", fmt_int(rv$roi_area_m2))
+    }
   })
   
   # ---------------------------
-  # CSV Export
+  # CSV Export (keeps the size range in export like before; height range not exported here)
   # ---------------------------
   output$download_csv <- downloadHandler(
     filename = function() {
@@ -971,23 +1345,30 @@ server <- function(input, output, session) {
     content = function(file) {
       req(rv$roi_sf)
       
-      rng <- input$size_range
-      if (is.null(rng) || length(rng) != 2) rng <- c(NA_real_, NA_real_)
+      srng <- input$size_range
+      if (is.null(srng) || length(srng) != 2) srng <- c(NA_real_, NA_real_)
       
       ts <- ts_filtered()
-      if (is.null(ts)) ts <- data.frame(year = YEARS, building_count = NA_integer_, cover_pct = NA_real_)
+      if (is.null(ts)) {
+        ts <- data.frame(
+          year = YEARS,
+          building_count = NA_integer_,
+          total_built_area_m2 = NA_real_,
+          cover_pct = NA_real_
+        )
+      }
       
       out <- ts
       out$roi_area_m2 <- rv$roi_area_m2
       out$roi_geojson <- rv$roi_geojson
-      out$size_min_m2 <- rng[1]
-      out$size_max_m2 <- rng[2]
+      out$size_min_m2 <- srng[1]
+      out$size_max_m2 <- srng[2]
       out$v3_building_count_total_in_roi <- rv$v3_count
       out$presence_threshold <- PRES_THRESH
       
       out <- out[, c(
         "roi_area_m2", "roi_geojson", "size_min_m2", "size_max_m2",
-        "year", "building_count", "cover_pct",
+        "year", "building_count", "total_built_area_m2", "cover_pct",
         "v3_building_count_total_in_roi", "presence_threshold"
       )]
       
