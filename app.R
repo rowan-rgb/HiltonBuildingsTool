@@ -132,7 +132,7 @@ ui <- fluidPage(
       tags$div(
         style = "display:flex; gap:10px; margin-bottom:10px;",
         actionButton("toggle_wards", "Wards"),
-        actionButton("toggle_umn", "UMN Areas"),
+        actionButton("toggle_umn", "Functional Areas"),
         actionButton("toggle_draw", "Draw")
       ),
       
@@ -202,6 +202,18 @@ server <- function(input, output, session) {
   fmt_num0 <- function(x) {
     if (!is.finite(x)) return("—")
     format(round(x, 0), big.mark = ",", scientific = FALSE, trim = TRUE)
+  }
+  
+  fmt_scaled_m2 <- function(x, digits = 1) {
+    if (!is.finite(x)) return("—")
+    ax <- abs(x)
+    if (ax >= 1e6) {
+      paste0(format(round(x / 1e6, digits), nsmall = digits, trim = TRUE), " M m²")
+    } else if (ax >= 1e3) {
+      paste0(format(round(x / 1e3, digits), nsmall = digits, trim = TRUE), " K m²")
+    } else {
+      paste0(format(round(x, 0), big.mark = ",", scientific = FALSE, trim = TRUE), " m²")
+    }
   }
   
   clamp <- function(x, lo, hi) {
@@ -424,8 +436,6 @@ server <- function(input, output, session) {
         baseGroups = c("OSM", "Esri Imagery"),
         overlayGroups = c(
           "ROI",
-          "Wards",
-          "UMN Areas",
           paste0("Buildings ", FIRST_YEAR, " (Temporal)"),
           paste0("Buildings ", LAST_YEAR,  " (Temporal)"),
           "Buildings V3 (polygons)"
@@ -1025,88 +1035,287 @@ server <- function(input, output, session) {
     ts <- ts[order(ts$year), ]
     years <- ts$year
     b <- ts$building_count
+    area_m2 <- ts$total_built_area_m2
     cvr <- ts$cover_pct
     
     srng <- input$size_range
     v3_count_2023 <- NA_real_
+    v3_area_m2_2023 <- NA_real_
     
     if (!is.null(rv$v3_sf) && nrow(rv$v3_sf) > 0 && !is.null(srng) && length(srng) == 2) {
       v3_tmp <- add_area_m2(rv$v3_sf)
       v3_keep <- is.finite(v3_tmp$area_m2) &
         v3_tmp$area_m2 >= srng[1] &
         v3_tmp$area_m2 <= srng[2]
+      
       v3_count_2023 <- sum(v3_keep, na.rm = TRUE)
+      v3_area_m2_2023 <- sum(v3_tmp$area_m2[v3_keep], na.rm = TRUE)
     } else if (is.finite(rv$v3_count)) {
       v3_count_2023 <- rv$v3_count
     }
     
-    par(mar = c(6, 4.5, 5, 5))
+    # ---- scaling for right axis (area in K / M m²)
+    area_max <- max(
+      area_m2,
+      if (is.finite(v3_area_m2_2023)) v3_area_m2_2023 else NA_real_,
+      na.rm = TRUE
+    )
+    
+    if (!is.finite(area_max) || area_max <= 0) {
+      area_scale <- 1
+      area_unit <- "Built area (m²)"
+    } else if (area_max >= 1e6) {
+      area_scale <- 1e6
+      area_unit <- "Built area (M m²)"
+    } else if (area_max >= 1e3) {
+      area_scale <- 1e3
+      area_unit <- "Built area (K m²)"
+    } else {
+      area_scale <- 1
+      area_unit <- "Built area (m²)"
+    }
+    
+    area_scaled <- area_m2 / area_scale
+    v3_area_scaled_2023 <- if (is.finite(v3_area_m2_2023)) v3_area_m2_2023 / area_scale else NA_real_
+    
+    # ---- colours
+    col_count <- "#2C7FB8"
+    col_area  <- "#F28E2B"
+    col_line  <- "#2F4858"
+    col_v3    <- "#D7263D"
+    bg_panel  <- "#F8FAFC"
+    grid_col  <- "#D9E2EC"
+    
+    # ---- left and right axis limits
     y1max <- max(
       1,
       max(b, na.rm = TRUE),
       if (is.finite(v3_count_2023)) v3_count_2023 else NA_real_,
       na.rm = TRUE
-    ) * 1.35
+    ) * 1.30
     
-    mids <- barplot(
-      height = b,
-      names.arg = years,
-      las = 1,
-      ylab = "Building count (filtered by size range)",
-      main = "Filtered buildings: count (bars) + % land covered (line)",
+    y2max <- max(
+      1,
+      max(area_scaled, na.rm = TRUE),
+      if (is.finite(v3_area_scaled_2023)) v3_area_scaled_2023 else NA_real_,
+      na.rm = TRUE
+    ) * 1.26
+    
+    # map % line onto right-axis coordinate system
+    cvr_max <- max(cvr, na.rm = TRUE)
+    if (!is.finite(cvr_max) || cvr_max <= 0) cvr_max <- 1
+    cvr_on_area_axis <- (cvr / cvr_max) * (0.88 * y2max)
+    
+    # ---- layout
+    op <- par(no.readonly = TRUE)
+    on.exit(par(op))
+    par(
+      mar = c(7.5, 5, 5.8, 5.2),
+      oma = c(0, 0, 0, 0),
+      xaxs = "i",
+      yaxs = "i",
+      bty = "l"
+    )
+    
+    # ---- x positions with more spacing between years
+    n <- length(years)
+    x_mid <- seq(1, by = 1.35, length.out = n)
+    offset <- 0.28
+    count_x <- x_mid - offset
+    area_x  <- x_mid + offset
+    bar_w   <- 0.34
+    
+    xlim_all <- c(min(x_mid) - 0.9, max(x_mid) + 1.25)
+    
+    # ---- base plot for building count axis
+    plot(
+      NA, NA,
+      xlim = xlim_all,
       ylim = c(0, y1max),
-      border = NA
+      xaxt = "n",
+      yaxt = "n",
+      xlab = "",
+      ylab = "Building count",
+      main = "Filtered buildings by year"
     )
     
+    usr <- par("usr")
+    
+    # panel background + grid
+    rect(usr[1], usr[3], usr[2], usr[4], col = bg_panel, border = NA)
+    abline(h = pretty(c(0, y1max), n = 6), col = grid_col, lty = "dashed", lwd = 0.8)
+    
+    # ---- building count bars (left axis)
+    for (i in seq_along(b)) {
+      rect(
+        xleft   = count_x[i] - bar_w / 2,
+        ybottom = 0,
+        xright  = count_x[i] + bar_w / 2,
+        ytop    = b[i],
+        col     = adjustcolor(col_count, alpha.f = 0.90),
+        border  = NA
+      )
+    }
+    
+    axis(2, las = 1, col.axis = "#334E68", col = NA)
+    axis(1, at = x_mid, labels = years, las = 1, tick = FALSE, line = -0.5, cex.axis = 0.95)
+    mtext("Year", side = 1, line = 5.4)
+    
+    # ---- overlay right axis for built area + cover line
+    par(new = TRUE)
+    plot(
+      NA, NA,
+      xlim = xlim_all,
+      ylim = c(0, y2max),
+      xaxt = "n", yaxt = "n",
+      xlab = "", ylab = ""
+    )
+    
+    # ---- area bars (right axis)
+    for (i in seq_along(area_scaled)) {
+      rect(
+        xleft   = area_x[i] - bar_w / 2,
+        ybottom = 0,
+        xright  = area_x[i] + bar_w / 2,
+        ytop    = area_scaled[i],
+        col     = adjustcolor(col_area, alpha.f = 0.85),
+        border  = NA
+      )
+    }
+    
+    axis(4, las = 1, col.axis = "#7C4A03", col = NA)
+    mtext(area_unit, side = 4, line = 3.2, col = "#7C4A03")
+    
+    # ---- % cover line
+    lines(
+      area_x, cvr_on_area_axis,
+      type = "o", lwd = 2.2, pch = 21,
+      bg = "white", col = col_line
+    )
+    
+    # ---- labels on area bars
     text(
-      mids,
-      b + 0.03 * y1max,
-      labels = format(round(b, 0), big.mark = ","),
-      cex = 0.82
+      x = area_x,
+      y = area_scaled + 0.025 * y2max,
+      labels = vapply(area_m2, fmt_scaled_m2, character(1), digits = 1),
+      cex = 0.74,
+      col = "#7C4A03"
     )
     
+    # ---- labels on % line points
+    text(
+      x = area_x,
+      y = cvr_on_area_axis + 0.04 * y2max,
+      labels = paste0(round(cvr, 1), "%"),
+      cex = 0.74,
+      col = col_line
+    )
+    
+    # ---- V3 point for 2023: count on left axis
     if (is.finite(v3_count_2023)) {
       idx_2023 <- which(years == 2023)
       if (length(idx_2023) == 1) {
-        x2023 <- mids[idx_2023]
-        points(x2023, v3_count_2023, pch = 16, col = "red")
+        par(new = TRUE)
+        plot(
+          NA, NA,
+          xlim = xlim_all,
+          ylim = c(0, y1max),
+          xaxt = "n", yaxt = "n",
+          xlab = "", ylab = ""
+        )
+        points(
+          count_x[idx_2023], v3_count_2023,
+          pch = 21, bg = col_v3, col = "white", cex = 1.35
+        )
         text(
-          x2023,
-          v3_count_2023 + 0.04 * y1max,
-          labels = paste0("V3: ", fmt_num0(v3_count_2023)),
-          cex = 0.82,
-          col = "red"
+          count_x[idx_2023],
+          v3_count_2023 + 0.045 * y1max,
+          labels = paste0("V3 count: ", fmt_num0(v3_count_2023)),
+          cex = 0.76,
+          col = col_v3,
+          font = 2
         )
       }
     }
     
+    # ---- V3 built area on right axis
+    if (is.finite(v3_area_scaled_2023)) {
+      idx_2023 <- which(years == 2023)
+      if (length(idx_2023) == 1) {
+        par(new = TRUE)
+        plot(
+          NA, NA,
+          xlim = xlim_all,
+          ylim = c(0, y2max),
+          xaxt = "n", yaxt = "n",
+          xlab = "", ylab = ""
+        )
+        points(
+          area_x[idx_2023], v3_area_scaled_2023,
+          pch = 23, bg = col_v3, col = "white", cex = 1.25
+        )
+        text(
+          area_x[idx_2023],
+          v3_area_scaled_2023 + 0.045 * y2max,
+          labels = paste0("V3 area: ", fmt_scaled_m2(v3_area_m2_2023, digits = 1)),
+          cex = 0.74,
+          col = col_v3,
+          font = 2
+        )
+      }
+    }
+    
+    # ---- subtle baseline
     par(new = TRUE)
-    y2lim <- range(cvr, na.rm = TRUE)
-    if (!is.finite(y2lim[1]) || !is.finite(y2lim[2])) y2lim <- c(0, 1)
-    if (diff(y2lim) == 0) y2lim <- y2lim + c(-0.5, 0.5)
+    plot(
+      NA, NA,
+      xlim = xlim_all,
+      ylim = c(0, y1max),
+      xaxt = "n", yaxt = "n",
+      xlab = "", ylab = ""
+    )
+    abline(h = 0, col = "#9FB3C8", lwd = 1)
     
-    plot(mids, cvr, type = "o", pch = 1, axes = FALSE, xlab = "", ylab = "", ylim = y2lim)
-    axis(4)
-    mtext("% land covered (filtered)", side = 4, line = 3)
-    
+    # ---- building-count labels drawn LAST so they stay visible
+    valid_b <- is.finite(b)
     text(
-      mids,
-      cvr + 0.04 * diff(y2lim),
-      labels = paste0(round(cvr, 1), "%"),
-      cex = 0.82
+      x = count_x[valid_b],
+      y = b[valid_b] + 0.025 * y1max,
+      labels = format(round(b[valid_b], 0), big.mark = ","),
+      cex = 0.78,
+      col = "#1F2933",
+      font = 2
     )
     
+    # ---- legend moved outside plot area
     legend(
-      "topleft",
-      legend = c("Filtered count (bars)", "Filtered % cover (line)", "V3 count in 2023 (point)"),
-      pch = c(15, 1, 16),
-      col = c("black", "black", "red"),
-      pt.cex = c(1.5, 1, 1),
-      bty = "n"
+      "top",
+      inset = c(0, -0.10),
+      xpd = NA,
+      horiz = TRUE,
+      bty = "n",
+      cex = 0.88,
+      pt.cex = c(1.3, 1.3, 1.0, 1.1, 1.1),
+      pch = c(15, 15, 21, 21, 23),
+      pt.bg = c(col_count, col_area, "white", col_v3, col_v3),
+      col = c(col_count, col_area, col_line, "white", "white"),
+      lty = c(0, 0, 1, 0, 0),
+      lwd = c(0, 0, 2, 0, 0),
+      legend = c(
+        "Building count",
+        paste0("Built area (", sub("Built area \\(|\\)", "", area_unit), ")"),
+        "% land covered",
+        "V3 count in 2023",
+        "V3 built area in 2023"
+      )
     )
-  })
-  
-  # ---------------------------
+    
+    # ---- subtitle
+    mtext(
+      "Counts on left axis, built area on right axis, percentage cover as a labelled line",
+      side = 3, line = 0.8, cex = 0.86, col = "#486581"
+    )
+  })  # ---------------------------
   # Main pipeline for ROI
   # ---------------------------
   run_pipeline_for_roi <- function(roi_sf, label = "ROI") {
