@@ -7,7 +7,6 @@
 # - Keeps Wards / UMN Areas / Draw modes + live size filtering + plots + CSV export
 # ------------------------------------------------------------
 
-
 # install.packages(c(
 #   "shiny",
 #   "leaflet",
@@ -16,7 +15,8 @@
 #   "jsonlite",
 #   "geojsonsf",
 #   "htmlwidgets",
-#   "plotly"
+#   "plotly",
+#   "openxlsx"
 # ))
 
 #install.packages("leaflet.extras")
@@ -32,6 +32,7 @@ library(jsonlite)
 library(geojsonsf)
 library(htmlwidgets)
 library(plotly)
+library(openxlsx)
 
 # ---------------------------
 # Local buildings data paths
@@ -73,7 +74,7 @@ PRES_THRESH <- 0.5
 # ---- local shapefiles ----
 wards_path <- "Data/Wards/Municipal_Wards_2021.shp"
 
-UMN_function_areas_path <- "Data/Regions/UMN_Functional_Areas_3.shp"
+UMN_function_areas_path <- "Data/Regions/UMN_Functional_Areas_7e.shp"
 
 # app_dir <- normalizePath(getwd(), winslash = "/")  # if you always run app from its folder
 # wards_path <- file.path(app_dir, "Data/Wards/Municipal_Wards_2021.shp")
@@ -144,7 +145,8 @@ ui <- fluidPage(
       tags$div(
         style = "display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px;",
         strong(textOutput("roi_area_m2")),
-        downloadButton("download_csv", "Export CSV")
+        downloadButton("download_csv",      "Summary XLSX"),
+        downloadButton("download_full_csv", "Full XLSX")
       ),
       
       # --- Size histogram + size range slider (WITH manual min input) ---
@@ -635,20 +637,26 @@ server <- function(input, output, session) {
     min_a <- floor(min(a))
     max_a <- ceiling(max(a))
     
-    cur <- isolate(input$size_range)
-    cur_max <- if (!is.null(cur) && length(cur) == 2 && all(is.finite(cur))) cur[2] else max_a
-    
     min_user <- isolate(input$min_size_m2)
     if (is.null(min_user) || !is.finite(min_user)) min_user <- min_a
     min_user <- clamp(min_user, min_a, max_a)
     
-    cur_max <- clamp(cur_max, min_user, max_a)
+    max_user <- isolate(input$max_size_m2)
+    if (is.null(max_user) || !is.finite(max_user)) max_user <- max_a
+    max_user <- clamp(max_user, min_user, max_a)
     
     tags$div(
       numericInput(
         "min_size_m2",
-        "Minimum building size (m²)",
+        "Minimum building size (m\u00b2)",
         value = min_user,
+        min = min_a, max = max_a,
+        step = 1
+      ),
+      numericInput(
+        "max_size_m2",
+        "Maximum building size (m\u00b2)",
+        value = max_user,
         min = min_a, max = max_a,
         step = 1
       ),
@@ -658,10 +666,10 @@ server <- function(input, output, session) {
           style = "flex:1;",
           sliderInput(
             "size_range",
-            "Building polygon size range (m²)",
-            min = min_user,
+            "Building polygon size range (m\u00b2)",
+            min = min_a,
             max = max_a,
-            value = c(min_user, cur_max),
+            value = c(min_user, max_user),
             step = 1
           )
         ),
@@ -674,23 +682,36 @@ server <- function(input, output, session) {
     )
   })
   
+  # Sync slider when min size typed
   observeEvent(input$min_size_m2, {
     a <- rv$poly_last_areas_m2
     if (is.null(a) || length(a) == 0) return()
-    
     a <- a[is.finite(a) & a > 0]
     if (length(a) == 0) return()
-    
-    min_a <- floor(min(a))
-    max_a <- ceiling(max(a))
+    min_a <- floor(min(a)); max_a <- ceiling(max(a))
     
     min_user <- clamp(input$min_size_m2, min_a, max_a)
-    
     cur <- input$size_range
     cur_max <- if (!is.null(cur) && length(cur) == 2 && is.finite(cur[2])) cur[2] else max_a
     cur_max <- clamp(cur_max, min_user, max_a)
     
-    updateSliderInput(session, "size_range", min = min_user, max = max_a, value = c(min_user, cur_max))
+    updateSliderInput(session, "size_range", min = min_a, max = max_a, value = c(min_user, cur_max))
+  }, ignoreInit = TRUE)
+  
+  # Sync slider when max size typed
+  observeEvent(input$max_size_m2, {
+    a <- rv$poly_last_areas_m2
+    if (is.null(a) || length(a) == 0) return()
+    a <- a[is.finite(a) & a > 0]
+    if (length(a) == 0) return()
+    min_a <- floor(min(a)); max_a <- ceiling(max(a))
+    
+    max_user <- clamp(input$max_size_m2, min_a, max_a)
+    cur <- input$size_range
+    cur_min <- if (!is.null(cur) && length(cur) == 2 && is.finite(cur[1])) cur[1] else min_a
+    cur_min <- clamp(cur_min, min_a, max_user)
+    
+    updateSliderInput(session, "size_range", min = min_a, max = max_a, value = c(cur_min, max_user))
   }, ignoreInit = TRUE)
   
   # ---------------------------
@@ -730,20 +751,26 @@ server <- function(input, output, session) {
     max_h <- ceiling(max(h))
     if (!is.finite(min_h) || !is.finite(max_h) || min_h >= max_h) return(NULL)
     
-    cur <- isolate(input$height_range)
-    cur_max <- if (!is.null(cur) && length(cur) == 2 && all(is.finite(cur))) cur[2] else max_h
-    
     min_user <- isolate(input$min_height_m)
     if (is.null(min_user) || !is.finite(min_user)) min_user <- min_h
     min_user <- clamp(min_user, min_h, max_h)
     
-    cur_max <- clamp(cur_max, min_user, max_h)
+    max_user <- isolate(input$max_height_m)
+    if (is.null(max_user) || !is.finite(max_user)) max_user <- max_h
+    max_user <- clamp(max_user, min_user, max_h)
     
     tags$div(
       numericInput(
         "min_height_m",
         "Minimum building height (m)",
         value = min_user,
+        min = min_h, max = max_h,
+        step = 0.5
+      ),
+      numericInput(
+        "max_height_m",
+        "Maximum building height (m)",
+        value = max_user,
         min = min_h, max = max_h,
         step = 0.5
       ),
@@ -754,9 +781,9 @@ server <- function(input, output, session) {
           sliderInput(
             "height_range",
             "Building height range (m)",
-            min = min_user,
+            min = min_h,
             max = max_h,
-            value = c(min_user, cur_max),
+            value = c(min_user, max_user),
             step = 0.5
           )
         ),
@@ -769,20 +796,32 @@ server <- function(input, output, session) {
     )
   })
   
+  # Sync slider when min height typed
   observeEvent(input$min_height_m, {
     h <- heights_last_filtered_by_size()
     if (length(h) == 0) return()
-    
-    min_h <- floor(min(h))
-    max_h <- ceiling(max(h))
+    min_h <- floor(min(h)); max_h <- ceiling(max(h))
     
     min_user <- clamp(input$min_height_m, min_h, max_h)
-    
     cur <- input$height_range
     cur_max <- if (!is.null(cur) && length(cur) == 2 && is.finite(cur[2])) cur[2] else max_h
     cur_max <- clamp(cur_max, min_user, max_h)
     
-    updateSliderInput(session, "height_range", min = min_user, max = max_h, value = c(min_user, cur_max))
+    updateSliderInput(session, "height_range", min = min_h, max = max_h, value = c(min_user, cur_max))
+  }, ignoreInit = TRUE)
+  
+  # Sync slider when max height typed
+  observeEvent(input$max_height_m, {
+    h <- heights_last_filtered_by_size()
+    if (length(h) == 0) return()
+    min_h <- floor(min(h)); max_h <- ceiling(max(h))
+    
+    max_user <- clamp(input$max_height_m, min_h, max_h)
+    cur <- input$height_range
+    cur_min <- if (!is.null(cur) && length(cur) == 2 && is.finite(cur[1])) cur[1] else min_h
+    cur_min <- clamp(cur_min, min_h, max_user)
+    
+    updateSliderInput(session, "height_range", min = min_h, max = max_h, value = c(cur_min, max_user))
   }, ignoreInit = TRUE)
   
   # ---------------------------
@@ -978,14 +1017,38 @@ server <- function(input, output, session) {
       p <- compute_temporal_in_roi(roi_sf, y)
       
       if (is.null(p) || nrow(p) == 0) {
-        out[[i]] <- numeric(0)
+        # Store an empty data frame so downstream code can always expect the same shape
+        out[[i]] <- data.frame(area_m2 = numeric(0), height_m = numeric(0))
         next
       }
       
       p <- add_area_m2(p)
-      a <- p$area_m2
-      a <- a[is.finite(a) & a > 0]
-      out[[i]] <- a
+      
+      # Extract a per-row height vector (NA where no valid height exists)
+      height_col_candidates <- c(
+        "height_mean_m", "height_median_m", "height_p95_m",
+        "height_mean", "height_median", "height_p95",
+        "height", "HEIGHT", "building_height", "BUILDING_HEIGHT",
+        "bldg_height", "BLDG_HEIGHT", "bldg_hgt", "BLDG_HGT",
+        "hgt", "HGT", "height_m", "HEIGHT_M",
+        "roof_height", "ROOF_HEIGHT", "mean_height", "MEAN_HEIGHT",
+        "mean", "median", "p95"
+      )
+      hcol <- height_col_candidates[height_col_candidates %in% names(p)][1]
+      h_raw <- if (!is.na(hcol) && !is.null(hcol)) {
+        suppressWarnings(as.numeric(p[[hcol]]))
+      } else {
+        rep(NA_real_, nrow(p))
+      }
+      
+      df <- data.frame(
+        area_m2  = p$area_m2,
+        height_m = h_raw,
+        stringsAsFactors = FALSE
+      )
+      # Only keep rows with a valid positive area; height may be NA
+      df <- df[is.finite(df$area_m2) & df$area_m2 > 0, , drop = FALSE]
+      out[[i]] <- df
     }
     
     out
@@ -997,16 +1060,16 @@ server <- function(input, output, session) {
     if (is.null(srng) || length(srng) != 2 || any(!is.finite(srng))) return(NULL)
     
     roi_m2 <- rv$roi_area_m2
-    if (!is.finite(roi_m2) || roi_m2 <= 0) return(NULL
-                                                  
-    )
+    if (!is.finite(roi_m2) || roi_m2 <= 0) return(NULL)
     
     yrs <- as.integer(names(rv$year_area_list))
     yrs <- yrs[order(yrs)]
     
     rows <- lapply(yrs, function(y) {
-      a <- rv$year_area_list[[as.character(y)]]
-      a_sel <- a[a >= srng[1] & a <= srng[2]]
+      df <- rv$year_area_list[[as.character(y)]]
+      # Support both old (numeric vector) and new (data frame) formats
+      a <- if (is.data.frame(df)) df$area_m2 else df
+      a_sel <- a[is.finite(a) & a >= srng[1] & a <= srng[2]]
       total_area <- sum(a_sel, na.rm = TRUE)
       cnt <- length(a_sel)
       cover <- if (length(a_sel) > 0) 100 * (total_area / roi_m2) else 0
@@ -1022,6 +1085,7 @@ server <- function(input, output, session) {
     do.call(rbind, rows)
   })
   
+  
   output$ts_plot <- renderPlot({
     req(rv$roi_sf)
     
@@ -1036,8 +1100,7 @@ server <- function(input, output, session) {
     years <- ts$year
     b <- ts$building_count
     area_m2 <- ts$total_built_area_m2
-    cvr <- ts$cover_pct
-    
+        
     srng <- input$size_range
     v3_count_2023 <- NA_real_
     v3_area_m2_2023 <- NA_real_
@@ -1081,8 +1144,7 @@ server <- function(input, output, session) {
     # ---- colours
     col_count <- "#2C7FB8"
     col_area  <- "#F28E2B"
-    col_line  <- "#2F4858"
-    col_v3    <- "#D7263D"
+        col_v3    <- "#D7263D"
     bg_panel  <- "#F8FAFC"
     grid_col  <- "#D9E2EC"
     
@@ -1100,11 +1162,6 @@ server <- function(input, output, session) {
       if (is.finite(v3_area_scaled_2023)) v3_area_scaled_2023 else NA_real_,
       na.rm = TRUE
     ) * 1.26
-    
-    # map % line onto right-axis coordinate system
-    cvr_max <- max(cvr, na.rm = TRUE)
-    if (!is.finite(cvr_max) || cvr_max <= 0) cvr_max <- 1
-    cvr_on_area_axis <- (cvr / cvr_max) * (0.88 * y2max)
     
     # ---- layout
     op <- par(no.readonly = TRUE)
@@ -1186,13 +1243,6 @@ server <- function(input, output, session) {
     axis(4, las = 1, col.axis = "#7C4A03", col = NA)
     mtext(area_unit, side = 4, line = 3.2, col = "#7C4A03")
     
-    # ---- % cover line
-    lines(
-      area_x, cvr_on_area_axis,
-      type = "o", lwd = 2.2, pch = 21,
-      bg = "white", col = col_line
-    )
-    
     # ---- labels on area bars
     text(
       x = area_x,
@@ -1200,15 +1250,6 @@ server <- function(input, output, session) {
       labels = vapply(area_m2, fmt_scaled_m2, character(1), digits = 1),
       cex = 0.74,
       col = "#7C4A03"
-    )
-    
-    # ---- labels on % line points
-    text(
-      x = area_x,
-      y = cvr_on_area_axis + 0.04 * y2max,
-      labels = paste0(round(cvr, 1), "%"),
-      cex = 0.74,
-      col = col_line
     )
     
     # ---- V3 point for 2023: count on left axis
@@ -1295,16 +1336,15 @@ server <- function(input, output, session) {
       horiz = TRUE,
       bty = "n",
       cex = 0.88,
-      pt.cex = c(1.3, 1.3, 1.0, 1.1, 1.1),
-      pch = c(15, 15, 21, 21, 23),
-      pt.bg = c(col_count, col_area, "white", col_v3, col_v3),
-      col = c(col_count, col_area, col_line, "white", "white"),
-      lty = c(0, 0, 1, 0, 0),
-      lwd = c(0, 0, 2, 0, 0),
+      pt.cex = c(1.3, 1.3, 1.1, 1.1),
+      pch = c(15, 15, 21, 23),
+      pt.bg = c(col_count, col_area, col_v3, col_v3),
+      col = c(col_count, col_area, "white", "white"),
+      lty = c(0, 0, 0, 0),
+      lwd = c(0, 0, 0, 0),
       legend = c(
         "Building count",
         paste0("Built area (", sub("Built area \\(|\\)", "", area_unit), ")"),
-        "% land covered",
         "V3 count in 2023",
         "V3 built area in 2023"
       )
@@ -1312,7 +1352,7 @@ server <- function(input, output, session) {
     
     # ---- subtitle
     mtext(
-      "Counts on left axis, built area on right axis, percentage cover as a labelled line",
+      "Counts on left axis, built area on right axis",
       side = 3, line = 0.8, cex = 0.86, col = "#486581"
     )
   })  # ---------------------------
@@ -1545,11 +1585,11 @@ server <- function(input, output, session) {
   })
   
   # ---------------------------
-  # CSV Export (keeps the size range in export like before; height range not exported here)
+  # Summary XLSX Export — single sheet, annual time-series
   # ---------------------------
   output$download_csv <- downloadHandler(
     filename = function() {
-      paste0("open_buildings_filtered_timeseries_", format(Sys.Date(), "%Y%m%d"), ".csv")
+      paste0("open_buildings_summary_", format(Sys.Date(), "%Y%m%d"), ".xlsx")
     },
     content = function(file) {
       req(rv$roi_sf)
@@ -1581,7 +1621,104 @@ server <- function(input, output, session) {
         "v3_building_count_total_in_roi", "presence_threshold"
       )]
       
-      utils::write.csv(out, file, row.names = FALSE)
+      wb <- openxlsx::createWorkbook()
+      openxlsx::addWorksheet(wb, "Summary")
+      openxlsx::writeData(wb, "Summary", out)
+      openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
+    }
+  )
+  
+  # ---------------------------
+  # Full XLSX Export
+  #   Sheet 1 "Buildings"  — all temporal records, no filters
+  #   Sheet 2 "V3_control" — V3 2023 records, no filters
+  # ---------------------------
+  output$download_full_csv <- downloadHandler(
+    filename = function() {
+      paste0("open_buildings_full_", format(Sys.Date(), "%Y%m%d"), ".xlsx")
+    },
+    content = function(file) {
+      req(rv$roi_sf, rv$year_area_list)
+      
+      # ---- Sheet 1: temporal building records ----
+      yrs <- sort(as.integer(names(rv$year_area_list)))
+      
+      record_rows <- lapply(yrs, function(y) {
+        df <- rv$year_area_list[[as.character(y)]]
+        if (is.null(df) || (is.data.frame(df) && nrow(df) == 0)) return(NULL)
+        
+        a <- if (is.data.frame(df)) df$area_m2 else df
+        h <- if (is.data.frame(df)) df$height_m else rep(NA_real_, length(a))
+        
+        keep <- is.finite(a) & a > 0
+        a <- a[keep]; h <- h[keep]
+        if (length(a) == 0) return(NULL)
+        
+        data.frame(
+          unique_id = paste0(y, "_", seq_along(a)),
+          year      = y,
+          area_m2   = a,
+          height_m  = h,
+          stringsAsFactors = FALSE
+        )
+      })
+      
+      record_rows <- Filter(Negate(is.null), record_rows)
+      buildings <- if (length(record_rows) > 0) {
+        do.call(rbind, record_rows)
+      } else {
+        data.frame(unique_id = character(), year = integer(),
+                   area_m2 = numeric(), height_m = numeric())
+      }
+      
+      # ---- Sheet 2: V3 control records ----
+      v3_records <- data.frame(
+        unique_id = character(), year = integer(),
+        area_m2 = numeric(), height_m = numeric(),
+        stringsAsFactors = FALSE
+      )
+      
+      if (!is.null(rv$v3_sf) && nrow(rv$v3_sf) > 0) {
+        v3 <- rv$v3_sf  # area_m2 already added by add_area_m2()
+        
+        a <- v3$area_m2
+        height_col_candidates <- c(
+          "height_mean_m", "height_median_m", "height_p95_m",
+          "height_mean", "height_median", "height_p95",
+          "height", "HEIGHT", "building_height", "BUILDING_HEIGHT",
+          "bldg_height", "BLDG_HEIGHT", "bldg_hgt", "BLDG_HGT",
+          "hgt", "HGT", "height_m", "HEIGHT_M",
+          "roof_height", "ROOF_HEIGHT", "mean_height", "MEAN_HEIGHT",
+          "mean", "median", "p95"
+        )
+        hcol <- height_col_candidates[height_col_candidates %in% names(v3)][1]
+        h_vec <- if (!is.na(hcol) && !is.null(hcol)) {
+          suppressWarnings(as.numeric(v3[[hcol]]))
+        } else {
+          rep(NA_real_, nrow(v3))
+        }
+        
+        keep <- is.finite(a) & a > 0
+        a     <- a[keep]
+        h_vec <- h_vec[keep]
+        
+        if (length(a) > 0) {
+          v3_records <- data.frame(
+            unique_id = paste0("V3_2023_", seq_along(a)),
+            year      = 2023L,
+            area_m2   = a,
+            height_m  = h_vec,
+            stringsAsFactors = FALSE
+          )
+        }
+      }
+      
+      wb <- openxlsx::createWorkbook()
+      openxlsx::addWorksheet(wb, "Buildings")
+      openxlsx::writeData(wb, "Buildings", buildings)
+      openxlsx::addWorksheet(wb, "V3_control")
+      openxlsx::writeData(wb, "V3_control", v3_records)
+      openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
     }
   )
 }
